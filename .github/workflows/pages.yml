@@ -1,0 +1,54 @@
+name: Publish the demo
+
+# Builds the app demo from the ResidentHub app source (with DEMO=true: sample data, no database)
+# and publishes it together with the dashboards demo (web/) as one GitHub Pages site.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: mochiematchaaa/Residenthub
+          path: app-src
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Build the app demo
+        working-directory: app-src
+        run: |
+          flutter pub get
+          flutter build web --release --base-href "/${{ github.event.repository.name }}/app/" --dart-define=DEMO=true
+      - name: Put the site together
+        run: |
+          mkdir site
+          cp index.html .nojekyll site/
+          cp -r web site/web
+          cp -r app-src/build/web site/app
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

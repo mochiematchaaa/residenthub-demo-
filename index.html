@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ResidentHub Demo — sample data only</title>
+<link rel="icon" href="web/logo.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#17233f;--muted:#5a6682;--bg:#f2f4fb;--card:#fff;--line:#dfe3f0;--blue:#3B6FD8;--amber:#F5B544}
+@media (prefers-color-scheme:dark){:root{--ink:#eef1fb;--muted:#a9b3cf;--bg:#0f1426;--card:#171e36;--line:#2a3354}}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(1200px 500px at 50% -10%,rgba(157,130,238,.28),transparent),var(--bg);color:var(--ink);font:400 16px/1.55 'Source Sans 3',system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:36px 16px 56px}
+.top{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+.top img{width:46px;height:46px;border-radius:12px;object-fit:cover}
+.top b{font:700 18px 'Bricolage Grotesque',sans-serif;display:block;line-height:1.2}
+.top span{color:var(--muted);font-size:13px}
+.badge{display:inline-block;padding:5px 12px;border-radius:999px;background:var(--amber);color:#3a2a00;font-weight:800;font-size:12px;letter-spacing:.07em}
+h1{font:700 clamp(28px,5vw,44px)/1.1 'Bricolage Grotesque',sans-serif;margin:14px 0 10px}
+.lead{max-width:640px;color:var(--muted);margin:0 0 26px;font-size:17px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.card{display:flex;flex-direction:column;gap:10px;padding:22px;border-radius:20px;background:var(--card);border:1px solid var(--line);box-shadow:0 8px 26px rgba(40,50,100,.08)}
+.card h2{font:700 21px 'Bricolage Grotesque',sans-serif;margin:0}
+.card p{margin:0;color:var(--muted);font-size:14.5px;flex-grow:1}
+.btn{display:flex;align-items:center;justify-content:center;min-height:46px;padding:10px 16px;border-radius:13px;background:linear-gradient(110deg,#7e6ee0,#4f93d8);color:#fff;font-weight:700;text-decoration:none}
+.btn:hover{filter:brightness(1.07)}
+.btn.alt{background:transparent;color:var(--blue);border:1.5px solid var(--blue)}
+.note{margin-top:26px;padding:16px 18px;border-radius:16px;background:var(--card);border:1px dashed var(--line);color:var(--muted);font-size:14px}
+.note b{color:var(--ink)}
+code{background:rgba(120,130,170,.18);padding:1px 6px;border-radius:6px;font-size:13px}
+a.back{color:var(--blue);font-weight:600;text-decoration:none;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><img src="web/logo.jpg" alt=""><div><b>ResidentHub</b><span>City Residences Condominium Corporation</span></div></div>
+  <span class="badge">DEMO · SAMPLE DATA ONLY</span>
+  <h1>Try ResidentHub without signing up</h1>
+  <p class="lead">This is a preview of the whole system with made-up people, units, dues and bookings. It is not connected to the real database, so you can click around freely.</p>
+
+  <div class="grid">
+    <div class="card"><h2>Administrator dashboard</h2><p>Units, finance and payments, facility bookings, parking, announcements, polls, expenses, reports and the activity log.</p><a class="btn" href="web/admin.html?as=admin">Open the admin demo</a></div>
+    <div class="card"><h2>Resident dashboard</h2><p>Signed in as <b>Maria Reyes, Unit 3B</b>: book a facility, pay dues, join events, vote in polls and send a grievance.</p><a class="btn" href="web/resident.html?as=resident">Open the resident demo</a></div>
+    <div class="card"><h2>Mobile app</h2><p>The ResidentHub app (web version) with the same kind of sample data. Pick Admin or Resident on its sign-in screen.</p><a class="btn" href="app/">Open the app demo</a></div>
+  </div>
+
+  <div class="note"><b>How the demo works.</b> Nothing is sent to a server. Your clicks are saved in your own browser only, so the admin and resident demos can be open in two tabs and will update each other. Use the yellow <b>DEMO</b> button at the bottom-left of the dashboards to reset the sample data.<br>
+  Demo logins (password <code>Demo@1234</code>): <code>admin@demo.test</code> and <code>resident@demo.test</code>.<br><br>
+  <a class="back" href="https://mochiematchaaa.github.io/">&larr; City Residences website</a></div>
+</main>
+</body>
+</html>
