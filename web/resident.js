@@ -8,22 +8,36 @@ var state = {
 };
 try { state.darkMode = localStorage.getItem("rh_dark") === "1"; } catch (e) { /* storage blocked */ }
 
+// Called by core.js after sign-in: shows the portal.
 function rhEnter() { state.authed = true; state.view = "home"; state.usage = ""; state.usageInfoFor = ""; render(); }
+// Called by core.js on sign-out: clears the page state.
 function rhLeave() { state.authed = false; state.view = "home"; }
+// Signs the resident out.
 function doLogout() { signOut(); }
+// The signed-in resident's profile.
 function me() { return DB.profile || {}; }
+// The resident's name (or email).
 function myName() { return me().name || me().email || "Resident"; }
+// The household name of the resident's unit.
 function myHousehold() { var u = unitRec(myUnit()) || {}; return u.name && u.name !== "—" ? u.name : myName(); }
+// The record of the resident's own unit.
 function myRec() { return unitRec(myUnit()) || {}; }
+// True for unit usages that the admin must approve (short-term rental, business).
 function needsApproval(u) { return u && (u.usage === "shortterm" || u.usage === "business"); }
+// Color of a status chip (Approved = green, Pending = yellow...).
 function chipFor(s) { return s === "Approved" || s === "Paid" || s === "Confirmed" || s === "Completed" ? "good" : s === "Pending" ? "warn" : s === "Denied" || s === "Rejected" || s === "Overdue" ? "bad" : "info"; }
+// Color of an announcement type chip.
 function typeChipClass(t) { return t === "Emergency" ? "bad" : t === "Warning" ? "warn" : t === "Maintenance" ? "info" : ""; }
 
 /* ---------- mine ---------- */
 function myBookings() { return newest(list("booking")).filter(function (r) { return r.unit === myUnit(); }); }
+// The dues of my unit.
 function myDues() { return newest(list("due")).filter(function (r) { return r.unit === myUnit(); }); }
+// My unpaid dues.
 function myOpenDues() { return myDues().filter(function (r) { return !r.v.paid; }).sort(function (a, b) { return Number(a.id) - Number(b.id); }); }
+// The payment proofs I sent.
 function myProofs() { return newest(list("proof")).filter(function (r) { return r.unit === myUnit(); }); }
+// Announcements that the admin already published.
 function publishedAnns() { return newest(list("announcement")).filter(function (r) { return r.v.status !== "Draft"; }); }
 /* the soonest reservation that has not happened yet (a booking made for today counts until the day ends) */
 function nextBooking() {
@@ -32,11 +46,13 @@ function nextBooking() {
   rows.sort(function (a, b) { return (a.v.day || "9999") === (b.v.day || "9999") ? (Number(a.v.slot) || 0) - (Number(b.v.slot) || 0) : ((a.v.day || "9999") < (b.v.day || "9999") ? -1 : 1); });
   return rows[0] || null;
 }
+// One event with its date parts and how many units are going.
 function eventInfo(r) {
   var e = r.v, d = parseShort(e.date), going = list("rsvp").filter(function (x) { return Number(x.v.event) === Number(r.id); }).length;
   return { id: r.id, title: e.title, when: e.date || "", place: e.place || "", about: e.about || "", going: going,
     month: d ? MONTHS[d.getMonth()].toUpperCase() : "EVENT", day: d ? String(d.getDate()) : "•", mine: !!getRow("rsvp", myUnit() + "|" + r.id) };
 }
+// The items in the notification bell for this resident.
 function notifs() {
   var out = [], unit = myUnit(), u = myRec();
   myBookings().slice(0, 3).forEach(function (r) {
@@ -79,13 +95,16 @@ function titles() {
     settings: ["Settings", "Manage your profile, password, appearance, and where you're signed in."]
   }[state.view] || ["", ""];
 }
+// Picks the page function to draw for state.view.
 function view() {
   return ({ home: viewHome, book: viewBook, res: viewRes, dues: viewDues, parking: viewParkingPage, gr: viewGr, docs: viewDocs, rental: viewRental, settings: viewSettings, events: viewEvents, polls: viewPolls, directory: viewDirectory }[state.view] || viewHome)();
 }
+// Red banner shown when an Emergency announcement exists.
 function emergencyBanner() {
   var a = publishedAnns().filter(function (r) { return r.v.type === "Emergency"; })[0];
   return a ? '<div class="alert-banner"><div><strong>' + esc(a.v.title) + "</strong> — " + esc(a.v.body) + "</div></div>" : "";
 }
+// Draws the whole resident portal (menu + current page). Called after every change.
 function render() {
   if (!state.authed) return;
   document.documentElement.setAttribute("data-theme", state.darkMode ? "dark" : "light");
@@ -121,6 +140,7 @@ function homeAside() {
   if (nb) items.unshift([esc(nb.v.place) + " booking", esc(nb.v.status), esc(nb.v.when)]);
   return asideHtml(items.slice(0, 4), "See all events", "events");
 }
+// PAGE: Home.
 function viewHome() {
   var u = myRec(), open = myOpenDues(), bal = balanceFor(myUnit()), next = open[0], nb = nextBooking();
   var going = list("rsvp").filter(function (r) { return r.unit === myUnit(); }).length;
@@ -149,14 +169,19 @@ var BK_ICON = {
   pool: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17c2 0 2-1.5 4-1.5S9 17 11 17s2-1.5 4-1.5S17 17 19 17s1-.6 2-1"/><path d="M3 21c2 0 2-1.5 4-1.5S9 21 11 21s2-1.5 4-1.5S17 21 19 21s1-.6 2-1"/><path d="M8 14V6a2 2 0 013-1.7M14 14V6a2 2 0 013-1.7M8 9h6"/></svg>',
   hall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9l8-5 8 5v11"/><path d="M9 20v-6h6v6"/></svg>'
 };
+// The day chosen for booking (never in the past).
 function bookDay() {
   var today = dayKey(new Date()), d = state.bookDay;
   if (!d || d < today) d = today;
   return d;
 }
+// The month shown in the booking calendar.
 function calMonthKey() { return state.calMonth || bookDay().slice(0, 7); }
+// Day key -> readable date for the booking.
 function bookLabel(day) { var d = keyToDate(day); return d ? d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }) : day; }
+// The farthest day a resident may book.
 function maxBookDay() { var d = new Date(); d.setDate(d.getDate() + BOOK_AHEAD_DAYS); return dayKey(d); }
+// The booking calendar with free and taken days.
 function bookCalendarHtml(f) {
   var mk = calMonthKey(), y = +mk.slice(0, 4), m = +mk.slice(5, 7) - 1, today = dayKey(new Date()), last = maxBookDay(), sel = bookDay();
   var first = new Date(y, m, 1), days = new Date(y, m + 1, 0).getDate(), cells = [];
@@ -179,6 +204,7 @@ function bookCalendarHtml(f) {
     '<p class="hint" style="margin:8px 0 0">Availability is shown per ' + esc(String(facilities()[f].mins || 120)) + '-minute time slot. Pending requests hold their slot until the office reviews them.</p></div>';
 }
 var MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+// PAGE: Book a facility.
 function viewBook() {
   var fl = facilities();
   if (!fl.length) return '<div class="card"><p class="empty">No facilities can be booked yet. Please check again later.</p></div>';
@@ -200,6 +226,7 @@ function viewBook() {
     '<div class="card bk-day-card"><h2 style="font-size:19px">' + esc(cur.name) + '</h2><p class="hint" style="margin:2px 0 10px">' + esc(bookLabel(day)) + '</p><label class="dz-lab">Choose a date<input type="date" min="' + dayKey(new Date()) + '" max="' + maxBookDay() + '" value="' + day + '" onchange="pickDay(this.value)"></label>' +
     (cur.note ? '<div class="bk-note">' + esc(cur.note) + "</div>" : "") + '<div class="slots bk-slots">' + (slots || '<p class="empty">No times are set up for this amenity.</p>') + "</div>" + req + '<p class="hint" style="margin:0">Reservations are subject to approval by the office.</p></div></div></div>';
 }
+// Chooses a facility to book.
 function pickFacility(idx) { state.facIdx = idx; state.pick = null; render(); }
 /* arrow keys, Home and End move between the facility cards */
 function onFacKey(e) {
@@ -213,6 +240,7 @@ function onFacKey(e) {
   pickFacility(next);
   var el = document.getElementById("bk-fac-" + next); if (el) el.focus();
 }
+// Chooses a day in the booking calendar.
 function pickDay(key) {
   var today = dayKey(new Date());
   if (!keyToDate(key)) return;
@@ -220,13 +248,18 @@ function pickDay(key) {
   if (key > maxBookDay()) key = maxBookDay();
   state.bookDay = key; state.calMonth = key.slice(0, 7); state.pick = null; render();
 }
+// Goes to the previous or next month in the calendar.
 function shiftMonth(n) {
   var mk = calMonthKey(), d = new Date(+mk.slice(0, 4), +mk.slice(5, 7) - 1 + n, 1);
   state.calMonth = d.getFullYear() + "-" + pad(d.getMonth() + 1); render();
 }
+// Jumps the calendar back to today.
 function goToday() { pickDay(dayKey(new Date())); }
+// Chooses a time slot.
 function pickSlot(idx) { state.pick = state.pick === idx ? null : idx; render(); }
+// Clears the chosen time slot.
 function clearPick() { state.pick = null; render(); }
+// Sends the booking request. The database blocks a double booking of the same slot.
 async function submitBooking() {
   if (state.pick == null) return;
   var f = state.facIdx, i = state.pick, unit = myUnit(), fac = facilities()[f], day = bookDay(), date = keyToDate(day);
@@ -244,12 +277,15 @@ async function submitBooking() {
   }
   DB.busy = false; state.pick = null; render();
 }
+// Cancels my booking.
 function cancelBooking(id) {
   confirmBox("Cancel this reservation?", "The time becomes free for others.", "Cancel reservation", async function () { await del("booking", id); }, true);
 }
+// Downloads my reservations as CSV.
 function exportMyReservations() {
   exportCSV("my-reservations.csv", ["Facility", "Date & time", "Status"], myBookings().map(function (r) { return [r.v.place, r.v.when, r.v.status]; }));
 }
+// PAGE: My reservations.
 function viewRes() {
   var rows = myBookings().map(function (r) {
     var b = r.v;
@@ -296,6 +332,7 @@ function dueItems() {
   }
   return items;
 }
+// One card for a due (paid, open, overdue or pending).
 function dueCardHtml(it) {
   var cd = it.st === "open" || it.st === "overdue" ? dueCountdown(it.d) : null;
   var tone = it.st === "paid" ? "good" : it.st === "overdue" ? "bad" : it.st === "pending" ? "warn" : "info";
@@ -307,6 +344,7 @@ function dueCardHtml(it) {
   return '<div class="dz-item ' + tone + (state.dzFlash === it.id ? " flash" : "") + '" data-due="' + escAttr(it.id) + '"><span class="dz-ic ' + tone + '">' + ic + '</span><div class="dz-main"><b>' + esc(it.title) + '</b><div class="dz-sub"><span class="chip ' + (tone === "info" ? "info" : tone) + '">' + label + "</span>" +
     (it.due ? '<span class="dz-date">' + esc(it.due) + "</span>" : "") + (cd ? '<span class="dz-cd ' + cd.tone + '">' + esc(cd.text) + "</span>" : "") + '</div></div><div class="dz-end"><div class="dz-amt">' + peso(it.amount) + "</div>" + act + "</div></div>";
 }
+// PAGE: Dues and payments.
 function viewDues() {
   var items = dueItems(), bal = balanceFor(myUnit());
   var prq = getRow("request", myUnit()), parkOpen = items.filter(function (i) { return i.park && i.st === "open"; })[0];
@@ -353,6 +391,7 @@ function duesFx() {
   var hero = document.querySelector(".dz-hero.done.fresh");
   if (hero && !reduce) { hero.classList.remove("fresh"); confetti(hero); }
 }
+// Small confetti animation when everything is paid.
 function confetti(from) {
   var r = from.getBoundingClientRect(), cols = ["#F4D84E", "#F6B7D8", "#AAB968", "#B6C7EC", "#D9A953"], box = document.createElement("div");
   box.className = "dz-confetti"; box.style.cssText = "left:" + (r.left + 70) + "px;top:" + (r.top + 70) + "px";
@@ -364,6 +403,7 @@ function confetti(from) {
   document.body.appendChild(box);
   setTimeout(function () { if (box.parentNode) box.parentNode.removeChild(box); }, 1700);
 }
+// Pop animation on the dues ring.
 function dzPop(ev) {
   var b = ev && ev.currentTarget; if (!b) return;
   var hero = b.closest(".dz-hero") || b; confetti(hero);
@@ -379,16 +419,20 @@ function payThis(id) {
   var el = document.getElementById("payPanel");
   if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
 }
+// Scrolls to and highlights one due.
 function focusDue(id) {
   state.duesTab = "all"; state.dzFlash = id; render();
   var el = document.querySelector('[data-due="' + id + '"]');
   if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
   setTimeout(function () { state.dzFlash = ""; var e = document.querySelector('[data-due="' + id + '"]'); if (e) e.classList.remove("flash"); }, 1600);
 }
+// Chooses the payment method.
 function pickMethod(name) { state.payMethod = name; render(); }
+// Downloads my dues as CSV.
 function exportMyDues() {
   exportCSV("my-dues.csv", ["Charge", "Amount", "Due date", "Status"], myDues().map(function (r) { return [r.v.note, r.v.amount, r.v.dueDate || "", r.v.paid ? "Paid" : "Unpaid"]; }));
 }
+// Chooses which due I am paying.
 function choosePayFor(v) {
   state.payFor = v;
   var r = myOpenDues().filter(function (x) { return x.id === v; })[0];
@@ -396,6 +440,7 @@ function choosePayFor(v) {
   state.payAmt = r ? String(r.v.amount) : (v === "parking" ? String((getRow("request", myUnit()) || { value: {} }).value.amount || setting("motor_rate").rate || "") : "");
   render();
 }
+// The form to send a payment proof.
 function payFormHtml() {
   var open = myOpenDues(), methods = payMethods().filter(function (m) { return m.enabled; });
   if (!methods.length) methods = [{ name: PAY_OFFICE, details: "Pay at the administration office." }];
@@ -413,12 +458,14 @@ function payFormHtml() {
     '<label class="dz-lab">Reference number<input id="payRef" type="text" placeholder="Number on your receipt or transaction" value="' + escAttr(state.payRef) + '" oninput="state.payRef=this.value"></label></div></div>' +
     '<button class="btn primary dz-send" onclick="submitPaymentProof()">Send payment details</button></div>';
 }
+// The instructions on how to pay.
 function howToPayHtml() {
   var ms = payMethods().filter(function (m) { return m.enabled; });
   return '<div class="card"><h2 style="font-size:17px;margin-bottom:8px">How to pay</h2>' + ms.map(function (m) {
     return '<div style="padding:8px 0;border-top:1px solid var(--border2)"><b style="font-size:14px">' + esc(m.name) + '</b><div style="font-size:12.5px;color:var(--muted);white-space:pre-line">' + esc(m.details) + "</div></div>";
   }).join("") + "</div>";
 }
+// Sends the payment proof (the admin confirms it).
 function submitPaymentProof() {
   var amount = parseFloat(state.payAmt), ref = state.payRef.trim();
   if (!state.payFor) return toast("Choose what the payment is for.");
@@ -438,6 +485,7 @@ function submitPaymentProof() {
     toast("Payment details sent. The office will verify them and your receipt will appear here.");
   });
 }
+// My payment history.
 function myPaymentsHtml() {
   var l = myProofs();
   return '<div class="card"><h2 style="font-size:17px;margin-bottom:8px">My payments</h2>' + (l.length ? l.map(function (r) {
@@ -446,7 +494,9 @@ function myPaymentsHtml() {
       '</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px"><span class="chip ' + chipFor(p.status) + '">' + esc(p.status) + "</span>" + (p.status === "Confirmed" ? '<button class="btn" style="min-height:30px;padding:0 10px;font-size:12px" onclick="receiptFor(\'proof\',\'' + escAttr(r.id) + '\')">Receipt</button>' : "") + "</div></div>";
   }).join("") : '<p style="margin:0;font-size:13px;color:var(--muted)">No payments sent yet. After you pay, send the details above.</p>') + "</div>";
 }
+// Parking slots in natural order.
 function slotsSorted() { return list("slot").sort(function (a, b) { return naturalCompare(a.id, b.id); }); }
+// The parking summary card shown on the dues page.
 function parkingLinkHtml() {
   var mine = slotsSorted().filter(function (s) { return s.v.unit === myUnit(); })[0], rq = getRow("request", myUnit());
   var pick = rq && rq.value.slot, proof = pick ? parkProof(myUnit(), pick) : null;
@@ -454,6 +504,7 @@ function parkingLinkHtml() {
   return '<div class="card"><h2 style="font-size:17px;margin-bottom:4px">Motor parking</h2><p style="margin:0 0 10px;font-size:13px;color:var(--muted)">' + text + '</p>' +
     (pick && !proof && rq.value.amount ? '<button class="btn primary" style="margin-right:8px" onclick="payForParking()">Pay now</button>' : "") + '<button class="btn" onclick="set({view:\'parking\'})">Open Parking</button></div>';
 }
+// PAGE: Parking.
 function viewParkingPage() {
   var slots = slotsSorted(), unit = myUnit(), rates = motorRates(), rate = rates.month, held = heldSlots();
   var mine = slots.filter(function (s) { return s.v.unit === unit; })[0], req = getRow("request", unit);
@@ -480,6 +531,7 @@ function viewParkingPage() {
     (slots.length ? '<div class="card"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px"><h2 style="font-size:19px">Parking map</h2><span class="hint" style="margin:0">' + free + " of " + slots.length + ' free' + (canPick ? " · tap a free slot" : "") + '</span></div><div class="pk-grid">' + grid + '</div><div class="pk-legend"><span><i class="free"></i>Free</span><span><i class="held"></i>Held</span><span><i class="taken"></i>Taken</span>' + (mine || pick ? '<span><i class="mine"></i>Yours</span>' : "") + "</div></div>" : "") +
     '</div><div style="display:flex;flex-direction:column;gap:16px"><div class="card"><h2 style="font-size:19px;margin-bottom:4px">How it works</h2><ol style="margin:0;padding-left:18px;font-size:13px;color:var(--muted);line-height:1.8"><li>Tap a free slot on the map. The slot is held for you.</li><li>You choose a monthly or daily rental, and it shows up as a charge. Pay at the office, by bank transfer, GCash or Maya, then send the payment details.</li><li>When the office confirms your payment, the slot is yours. You get your receipt under Dues.</li></ol></div></div></div>';
 }
+// Requests a parking slot.
 function reserveSlot(id) {
   var unit = myUnit(), rates = motorRates();
   if (getRow("request", unit)) return toast("You already have a parking reservation.");
@@ -505,10 +557,12 @@ function reserveSlot(id) {
     }
   });
 }
+// Goes to pay the parking charge.
 function payForParking() {
   var rq = getRow("request", myUnit()); if (!rq) return;
   set({ view: "dues", payFor: "parking", payAmt: String(rq.value.amount || setting("motor_rate").rate || "") });
 }
+// Cancels my parking request.
 function cancelParkingRequest() {
   var rq = getRow("request", myUnit()), slot = rq && rq.value.slot;
   if (slot && parkProof(myUnit(), slot)) return toast("You already sent a payment for this slot. Please contact the office.");
@@ -527,6 +581,7 @@ function viewEvents() {
         '<div class="event-foot"><span class="going">' + e.going + ' going</span><button class="btn ' + (e.mine ? "" : "primary") + '" onclick="toggleRsvp(\'' + escAttr(e.id) + '\')">' + (e.mine ? "You're going ✓" : "I'm going") + "</button></div></div></div>";
     }).join("") || '<p class="empty">' + (all.length ? "You have not said you are going to any event yet." : "No events have been posted yet.") + "</p>") + "</div>";
 }
+// Marks my unit as going or not going to an event.
 function toggleRsvp(id) {
   var key = myUnit() + "|" + id, going = !!getRow("rsvp", key);
   act(async function () {
@@ -534,6 +589,7 @@ function toggleRsvp(id) {
     toast(going ? "Removed from the event." : "See you there!");
   });
 }
+// PAGE: Polls.
 function viewPolls() {
   var all = pollsAll(), open = all.filter(function (p) { return p.open; }).length;
   var shown = all.filter(function (p) { return state.pollFilter === "all" || (state.pollFilter === "open") === p.open; });
@@ -545,6 +601,7 @@ function viewPolls() {
         (showResults ? '<p class="hint" style="margin:12px 0 0">' + total + " vote" + (total === 1 ? "" : "s") + " so far" + (voted !== undefined ? " · thank you for voting" : "") + "</p>" : "") + "</div>";
     }).join("") || '<p class="empty">No polls here.</p>') + "</div>";
 }
+// Saves my unit's vote (one per unit, cannot be changed).
 function castVote(id) {
   var picked = document.querySelector('input[name="poll-' + id + '"]:checked');
   if (!picked) return toast("Pick an option first.");
@@ -564,7 +621,9 @@ var FAQ = [
   ["How do I request motor parking?", "Open Parking, tap a free slot on the map and pay the monthly rental. When the office confirms your payment, the slot is yours."],
   ["How do I report a problem in the building?", "Use Grievances to describe the concern. You can follow its status from Open to In progress to Resolved."]
 ];
+// The saved contacts and house rules.
 function directory() { var d = setting("directory"); return { contacts: d.contacts || [], rules: d.rules || [] }; }
+// PAGE: Directory (who to call, house rules).
 function viewDirectory() {
   var d = directory();
   return '<section><div class="sec-head"><h2>Who to call</h2></div>' + (d.contacts.length ? '<div class="contact-grid">' + d.contacts.map(function (c, i) {
@@ -573,6 +632,7 @@ function viewDirectory() {
     '<div class="two-lists"><section><div class="sec-head"><h2>House rules</h2></div><div class="lrows">' + (d.rules.map(function (r) { return '<div class="lrow rule"><span class="lmain"><b>' + esc(r[0]) + "</b><small>" + esc(r[1]) + "</small></span></div>"; }).join("") || '<p class="empty">The office has not added house rules yet.</p>') + "</div></section>" +
     '<section><div class="sec-head"><h2>Questions we hear a lot</h2></div><div class="faq">' + FAQ.map(function (f) { return "<details><summary>" + esc(f[0]) + "</summary><p>" + esc(f[1]) + "</p></details>"; }).join("") + "</div></section></div>";
 }
+// PAGE: Grievances.
 function viewGr() {
   var all = newest(list("grievance")).filter(function (r) { return r.unit === myUnit(); }), names = ["Open", "In progress", "Resolved"];
   return '<div class="two-col-e"><div class="card"><h2 style="font-size:19px;margin-bottom:4px">Submit a grievance</h2><p style="margin:0 0 12px;font-size:13px;color:var(--muted)">The association will follow up here once reviewed.</p>' +
@@ -583,6 +643,7 @@ function viewGr() {
         return '<div style="padding:12px 0;border-top:1px solid var(--border2)"><div style="font-weight:700;font-size:15px">' + esc(g.title) + '</div><div style="font-size:13px;color:var(--muted);margin:2px 0 6px">' + esc(g.body) + '</div><span class="chip ' + (s === 2 ? "good" : s === 1 ? "warn" : "info") + '">' + names[s] + "</span></div>";
       }).join("")) + "</div></div>";
 }
+// Sends a grievance to the admin.
 function submitGr() {
   var title = document.getElementById("grTitle").value.trim();
   if (!title) return toast("Enter a subject first.");
@@ -594,6 +655,7 @@ function submitGr() {
     toast("Grievance sent. The office will review it.");
   });
 }
+// PAGE: Documents.
 function viewDocs() {
   var docs = newest(list("doc")).filter(function (r) { return r.v.audience !== "admin"; });
   return '<div class="card" style="padding:0;overflow:hidden">' + (docs.map(function (r) {
@@ -624,8 +686,11 @@ function usageState() {
   }
   return rec;
 }
+// Chooses how the unit is used (owner, rented...).
 function pickUnitUsage(id) { state.usage = id; state.usageMsg = ""; usageState(); render(); }
+// Remembers what the resident types in the usage form.
 function setUsageInfo(k, v) { state.usageInfo[k] = v; }
+// One field of the usage form.
 function usageFieldHtml(f) {
   var v = state.usageInfo[f.k] == null ? "" : state.usageInfo[f.k], id = "ui-" + f.k, label = esc(f.label) + (f.req ? ' <b class="req">*</b>' : "");
   var on = 'oninput="setUsageInfo(\'' + f.k + '\',this.value)"';
@@ -635,6 +700,7 @@ function usageFieldHtml(f) {
   else inner = '<input id="' + id + '" type="' + (f.type || "text") + '" value="' + escAttr(v) + '" ' + on + ' placeholder="' + escAttr(f.ph || "") + '"' + (f.type === "number" ? ' min="1" inputmode="numeric"' : "") + ">";
   return '<label class="uf' + (f.type === "textarea" ? " wide" : "") + '"><span>' + label + "</span>" + inner + "</label>";
 }
+// PAGE: Unit status (owner, rental, business).
 function viewRental() {
   var rec = usageState();
   var type = USAGE_TYPES.filter(function (u) { return u.id === state.usage; })[0], form = USAGE_FORMS[state.usage];
@@ -659,7 +725,9 @@ function viewRental() {
     '<div style="display:flex;flex-direction:column;gap:16px">' + bring + '<div class="card"><h2 style="font-size:19px;margin-bottom:4px">How this works</h2><ol style="margin:0;padding-left:18px;font-size:13px;color:var(--muted);line-height:1.8"><li>Tell us how your unit is actually being used.</li><li>Owner-occupied, leased and vacant units, and units under renovation, are saved right away.</li><li>Short-term rentals (like Airbnb) and home-based businesses need the administrator\'s approval first. You will see the decision right here.</li></ol></div>' +
     '<div class="card"><h2 style="font-size:19px;margin-bottom:4px">Why we ask</h2><div class="benefit-row"><div><h4>Security</h4><p>The guardhouse knows who to expect when a unit has tenants, guests or workers coming in.</p></div></div><div class="benefit-row"><div><h4>Insurance</h4><p>Business or short-term-rental use can change what the building\'s coverage needs to account for.</p></div></div><div class="benefit-row"><div><h4>Fair dues</h4><p>Keeps the association\'s records accurate for everyone, in case usage ever affects dues.</p></div></div></div></div></div>';
 }
+// True if the text looks like a valid Philippine mobile number.
 function phoneOk(v) { var d = String(v || "").replace(/[^\d+]/g, "").replace(/^\+/, ""); if (d.indexOf("63") === 0) d = d.slice(2); else if (d.charAt(0) === "0") d = d.slice(1); return /^9\d{9}$/.test(d); }
+// Saves the usage form and sends it to the admin for approval when needed.
 function saveUnitUsage() {
   var key = state.usage, form = USAGE_FORMS[key], info = {}, summary = "";
   if (form) {
@@ -702,6 +770,7 @@ function viewSettings() {
     '<div style="display:flex;flex-direction:column;gap:16px"><div class="card"><h2 style="font-size:19px;margin-bottom:4px">Appearance</h2><p style="margin:0 0 10px;font-size:13px;color:var(--muted)">Currently in ' + (state.darkMode ? "dark" : "light") + ' mode.</p><button class="btn" onclick="toggleDarkMode()">' + (state.darkMode ? "Switch to light mode" : "Switch to dark mode") + "</button></div>" +
     '<div class="card"><h2 style="font-size:19px;margin-bottom:4px">Where you\'re signed in</h2><p style="margin:0 0 10px;font-size:13px;color:var(--muted)">You are signed in on this device. If you used a shared computer or lost a phone, sign out everywhere.</p><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn" onclick="signOut()">Log out here</button><button class="btn" style="color:#A02B1D" onclick="signOut(true)">Log out on all devices</button></div></div></div></div>';
 }
+// Popup form to change my password.
 function changePasswordForm() {
   openForm({
     title: "Change password",
@@ -732,6 +801,7 @@ function searchIndex() {
     FAQ.map(function (f) { return { t: esc(f[0]), s: esc(f[1]), tag: "FAQ", v: "directory" }; }),
     pages.map(function (p) { return { t: p[0], s: "Open this page", tag: "Page", v: p[1] }; }));
 }
+// The items in the notification bell.
 function bellItems() { return notifs().map(function (n) { return { t: esc(n[0]), s: "Open", v: n[2] }; }); }
 
 (function () {

@@ -26,9 +26,13 @@ var DEFAULT_AMENITIES = [
   { id: "pool", name: "Swimming Pool", open: "06:00", close: "20:00", mins: 120, note: "Free for residents. Guests pay ₱150 per visit, collected at the gate." },
   { id: "hall", name: "Function Hall", open: "08:00", close: "22:00", mins: 120, note: "" }
 ];
+// The list of facilities (pool, gym...) saved by the admin, or the default list.
 function amenities() { var s = setting("amenities"); return Array.isArray(s.list) ? s.list : DEFAULT_AMENITIES; }
+// Turns a time like '08:30' into minutes after midnight (510).
 function toMin(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(String(t || "").trim()); return m ? Number(m[1]) * 60 + Number(m[2]) : null; }
+// Turns minutes after midnight into text parts, e.g. 510 -> 8:30 AM.
 function clock(min) { var h = Math.floor(min / 60) % 24, m = min % 60; return { t: (h % 12 || 12) + (m ? ":" + (m < 10 ? "0" : "") + m : ""), ap: h >= 12 ? "PM" : "AM" }; }
+// Opening hours of a facility as text, e.g. '8 AM - 9 PM'.
 function hoursText(a) { var o = toMin(a.open), c = toMin(a.close); if (o == null || c == null) return ""; var x = clock(o), y = clock(c); return x.t + " " + x.ap + " – " + y.t + " " + y.ap; }
 /* the bookable times of one amenity, e.g. ["6–8 AM", "8–10 AM", ...] */
 function slotLabels(a) {
@@ -40,6 +44,7 @@ function slotLabels(a) {
   }
   return out;
 }
+// Facilities with their hours text and booking time slots filled in.
 function facilities() { return amenities().map(function (a) { return Object.assign({}, a, { hours: hoursText(a), slots: slotLabels(a) }); }); }
 /* ---------- unit usage: what the office needs to know for each way a unit can be used ---------- */
 var USAGE_FORMS = {
@@ -96,6 +101,7 @@ var USAGE_FORMS = {
     bring: ["Work permit request, signed by the owner", "Valid ID of the contractor and workers", "List of materials and equipment brought in"]
   }
 };
+// Shows a date saved as 2026-10-16 in the short form 'Oct 16, 2026'.
 function usageDate(iso) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || "")); return m ? shortDate(new Date(+m[1], +m[2] - 1, +m[3])) : String(iso || ""); }
 /* one short line for lists and the status history */
 function usageSummary(type, i) {
@@ -127,14 +133,19 @@ var DOC_CATS = ["Policy", "Finance", "Form", "Notice", "Minutes", "Other"];
 
 /* ---------- small helpers ---------- */
 function $(s, el) { return (el || document).querySelector(s); }
+// Makes text safe to put inside HTML. Use it on anything typed by a user.
 function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
     return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
   });
 }
+// Date -> 'Oct 16, 2026'.
 function shortDate(d) { return MONTHS[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear(); }
+// Adds a leading zero: 5 -> '05'.
 function pad(n) { return n < 10 ? "0" + n : "" + n; }
+// Date -> '2026-10-16' (the key used for bookings and parking).
 function dayKey(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+// Reads 'Oct 16, 2026' back into a Date. Returns null if it can't.
 function parseShort(s) {
   var m = /^([A-Za-z]{3})[A-Za-z]*\.?\s+(\d{1,2}),?\s+(\d{4})/.exec(String(s || "").trim());
   if (!m) return null;
@@ -142,12 +153,14 @@ function parseShort(s) {
   return mi < 0 ? null : new Date(+m[3], mi, +m[2]);
 }
 var lastId = 0;
+// A new unique id for a record (based on the current time).
 function nextId() {
   var n = Date.now();
   if (n <= lastId) n = lastId + 1;
   lastId = n;
   return n;
 }
+// Removes empty (undefined) values before saving to the database.
 function clean(v) {
   if (Array.isArray(v)) return v.map(clean);
   if (v && typeof v === "object") {
@@ -162,7 +175,9 @@ function clean(v) {
   }
   return v;
 }
+// Sorts names with numbers the human way: Unit 2 comes before Unit 10.
 function naturalCompare(a, b) { return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" }); }
+// Turns a technical error into a short readable message for the user.
 function errText(e) {
   var m = (e && (e.message || e.error_description)) || String(e || "");
   if (e && e.code === "23505") return "That was already taken by someone else.";
@@ -170,7 +185,9 @@ function errText(e) {
   if (/Failed to fetch|NetworkError|network/i.test(m)) return "No internet connection. Try again.";
   return m || "Something went wrong.";
 }
+// The display name of a unit's usage (owner-occupied, rented...).
 function usageLabel(k) { return USAGE_NAMES[k] || "—"; }
+// First letters of a name for the round avatar, e.g. 'Ana Cruz' -> 'AC'.
 function initials(name) { return String(name || "?").split(/\s+/).map(function (s) { return s[0]; }).slice(0, 2).join("").toUpperCase(); }
 
 /* ---------- password rules ---------- */
@@ -181,15 +198,18 @@ var PW_RULES = [
   ["A number (0-9)", function (p) { return /\d/.test(p); }],
   ["A symbol, e.g. ! @ # $ %", function (p) { return /[^A-Za-z0-9]/.test(p); }]
 ];
+// Checks a password against the rules. Returns the first problem, or '' if OK.
 function pwProblem(p) {
   for (var i = 0; i < PW_RULES.length; i++) {
     if (!PW_RULES[i][1](p)) return "Your new password needs: " + PW_RULES[i][0].replace(/^A(n)? /, function (m, n) { return n ? "an " : "a "; }).replace(/^At least/, "at least") + ".";
   }
   return null;
 }
+// The checklist of password rules shown under a password box.
 function rulesHtml() {
   return '<ul class="rules" data-rules>' + PW_RULES.map(function (r) { return "<li>" + esc(r[0]) + "</li>"; }).join("") + "</ul>";
 }
+// Ticks off each password rule live while the user types.
 function bindRules(input, root) {
   var items = root.querySelectorAll("li");
   function upd() { for (var i = 0; i < items.length; i++) items[i].className = PW_RULES[i][1](input.value) ? "ok" : ""; }
@@ -210,9 +230,12 @@ var DB = {
   sig: "",
   busy: false
 };
+// True if the signed-in person is the administrator.
 function isAdmin() { return DB.profile && DB.profile.role === "admin"; }
+// The unit of the signed-in resident (e.g. 'Unit 101').
 function myUnit() { return (DB.profile && DB.profile.unit) || ""; }
 
+// All records of one kind (e.g. list('booking')) as {id, unit, v} items.
 function list(kind) {
   var m = DB.rows[kind];
   if (!m) return [];
@@ -220,10 +243,15 @@ function list(kind) {
   m.forEach(function (r, id) { out.push({ id: id, unit: r.unit, v: r.value || {} }); });
   return out;
 }
+// Same as list() but only the data (v) of each record.
 function vals(kind) { return list(kind).map(function (r) { return r.v; }); }
+// Sorts records newest first.
 function newest(a) { return a.slice().sort(function (x, y) { return Number(y.id) - Number(x.id); }); }
+// One record by its kind and id, or null.
 function getRow(kind, id) { var m = DB.rows[kind]; return m ? m.get(String(id)) : null; }
+// One saved setting (rates, hours, directory...) as an object.
 function setting(id) { var r = getRow("setting", id); return (r && r.value) || {}; }
+// The data of one unit (name, status, usage...), or null.
 function unitRec(unit) { var r = getRow("unit", unit); return r ? r.value : null; }
 
 /* ---------- database ---------- */
@@ -249,12 +277,14 @@ async function loadAll() {
   DB.rows = out;
   return changed;
 }
+// Admin only: loads the list of sign-in accounts from the database.
 async function loadAccounts() {
   if (!isAdmin()) return;
   var r = await sb.from("profiles").select("*").order("name");
   if (r.error) throw r.error;
   DB.accounts = r.data || [];
 }
+// SAVES a record to the database (insert or update). Everything the dashboards save goes through here.
 async function put(kind, id, unit, value) {
   id = String(id);
   value = clean(value);
@@ -272,12 +302,14 @@ async function put(kind, id, unit, value) {
   if (!DB.rows[kind]) DB.rows[kind] = new Map();
   DB.rows[kind].set(id, { unit: unit, value: value });
 }
+// DELETES a record from the database.
 async function del(kind, id) {
   id = String(id);
   var res = await sb.from("records").delete().eq("kind", kind).eq("id", id);
   if (res.error) throw res.error;
   if (DB.rows[kind]) DB.rows[kind].delete(id);
 }
+// Adds a line to the admin Activity log (who did what).
 function logAct(title, area) {
   var at = nextId();
   put("activity", at, "__admin", { title: title, area: area || "", at: at }).catch(function () {});
@@ -293,11 +325,13 @@ function balanceFor(unit) {
   return vals("due").filter(function (d) { return d.unit === unit && !d.paid; })
     .reduce(function (s, d) { return s + Number(d.amount || 0); }, 0);
 }
+// True if a due is unpaid and its due date has passed.
 function isOverdue(d) {
   if (d.paid || !d.dueDate) return false;
   var x = parseShort(d.dueDate);
   return !!x && Date.now() > x.getTime() + 86400000;
 }
+// Next official receipt number, like OR-2026-0007.
 function nextReceiptNo() {
   var year = new Date().getFullYear(), max = 0, re = /^OR-(\d{4})-(\d+)$/;
   vals("payment").concat(vals("proof")).forEach(function (r) {
@@ -306,11 +340,13 @@ function nextReceiptNo() {
   });
   return "OR-" + year + "-" + String(max + 1).padStart(4, "0");
 }
+// The oldest unpaid due of a unit.
 function firstOpenDue(unit) {
   var open = vals("due").filter(function (d) { return d.unit === unit && !d.paid; });
   open.sort(function (a, b) { return a.id - b.id; });
   return open[0] || null;
 }
+// The payment methods the admin allows (GCash, bank...).
 function payMethods() {
   var s = setting("paymethods").list;
   if (!Array.isArray(s)) return DEFAULT_PAY.map(function (m) { return Object.assign({}, m); });
@@ -319,18 +355,22 @@ function payMethods() {
     return f ? { name: d.name, details: f.details || d.details, enabled: !!f.enabled } : Object.assign({}, d, { enabled: d.name === PAY_OFFICE });
   });
 }
+// Unique key of one facility time slot.
 function slotKey(f, i) { var a = facilities()[f]; return (a ? a.id : f) + "-" + i; }
 /* Motor parking: a resident picks a free slot, pays, and the office confirms the payment.
    The request row holds the chosen slot ("slot") and the rental ("amount"). */
 var PARK_FOR = "Motor parking rental";
 /* the two ways to rent a slot: for one month, or by the day */
 function motorRates() { return { month: setting("motor_rate").rate || 0, day: setting("motor_rate_daily").rate || 0 }; }
+// Text for a parking plan: 'Monthly' or 'Daily - 3 days'.
 function parkPlanText(plan, days) { return plan === "day" ? "Daily" + (days ? " · " + days + " day" + (days === 1 ? "" : "s") : "") : "Monthly"; }
+// Computes the parking price from the plan and number of days.
 function parkQuote(plan, days) {
   var r = motorRates();
   if (plan === "day") { var d = Math.max(1, Math.min(365, Math.round(Number(days)) || 1)); return { plan: "day", days: d, amount: r.day * d }; }
   return { plan: "month", days: 0, amount: r.month };
 }
+// Date -> '2026-10-16' (same as dayKey).
 function isoOf(d) { return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
 /* the last day of a rental that starts on `from` (yyyy-mm-dd): one month later, or `days` days */
 function parkUntil(plan, days, from) {
@@ -345,6 +385,7 @@ function parkSlotValue(id, unit, plan, days, amount) {
   var from = dayKey(new Date());
   return { id: id, unit: unit, plan: plan || "month", from: from, until: parkUntil(plan || "month", days, from), amount: amount || 0 };
 }
+// True if a parking rental already ended.
 function parkExpired(v) { return !!(v && v.unit && v.until && v.until < dayKey(new Date())); }
 /* "Monthly · until Nov 14, 2026" for a slot row */
 function parkRentalLine(v) {
@@ -368,6 +409,7 @@ function parkingFreeTag() {
   var all = list("slot"), held = heldSlots(), free = all.filter(function (s) { return !s.v.unit && !held[s.id]; }).length;
   return all.length ? free + " free" : "";
 }
+// True if a time slot is blocked by the admin today or already booked.
 function slotBooked(f, i) {
   var today = dayKey(new Date());
   var b = setting("blocked");
@@ -379,7 +421,9 @@ function slotBooked(f, i) {
 }
 /* ---------- booking by date ---------- */
 var BOOK_AHEAD_DAYS = 90;
+// '2026-10-16' -> Date.
 function keyToDate(k) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(k || ""); return m ? new Date(+m[1], +m[2] - 1, +m[3]) : null; }
+// Start time (minutes after midnight) of a time slot.
 function slotStartMin(a, i) { return (toMin(a.open) || 0) + i * (Number(a.mins) || 120); }
 /* what one time of one amenity looks like on one day: past | closed | booked | pending | open */
 function slotState(f, i, day) {
@@ -399,10 +443,12 @@ function dayCounts(f, day) {
   a.slots.forEach(function (t, i) { c[slotState(f, i, day)]++; c.total++; });
   return c;
 }
+// True if the admin blocked this time slot.
 function slotClosed(f, i) {
   var b = setting("blocked");
   return b.day === dayKey(new Date()) && (b.keys || []).indexOf(slotKey(f, i)) >= 0;
 }
+// All polls with their vote counts.
 function pollsAll() {
   var votes = list("vote");
   return newest(list("poll")).map(function (r) {
@@ -414,11 +460,14 @@ function pollsAll() {
     return { id: Number(r.id), q: p.question || "", open: !!p.open, closes: p.closes || "—", options: opts };
   });
 }
+// The signed-in unit's vote for a poll (one vote per unit).
 function myVote(pollId) {
   var r = getRow("vote", myUnit() + "|" + pollId);
   return r ? Number(r.value.option) : undefined;
 }
+// Month number of a date text, used to compare 'same month'.
 function monthOf(dateText) { var d = parseShort(dateText); return d ? d.getFullYear() * 12 + d.getMonth() : null; }
+// Month number of today.
 function thisMonthKey() { var n = new Date(); return n.getFullYear() * 12 + n.getMonth(); }
 
 /* ---------- documents ---------- */
@@ -430,6 +479,7 @@ function b64Bytes(b64) {
 var MIME = { pdf: "application/pdf", doc: "application/msword", docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xls: "application/vnd.ms-excel", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", png: "image/png", jpg: "image/jpeg",
   jpeg: "image/jpeg", txt: "text/plain", csv: "text/csv" };
+// Opens a shared document (the file itself, or its text in a popup).
 function openDoc(id) {
   var r = getRow("doc", id); if (!r) return;
   var d = r.value;
@@ -465,6 +515,7 @@ function receiptHtml(p) {
     rows.map(function (r) { return "<tr><td>" + esc(r[0]) + "</td><td>" + esc(r[1]) + "</td></tr>"; }).join("") +
     "</table><p>This receipt is your proof of payment. Keep a copy for your records.</p></body></html>";
 }
+// Downloads an official receipt as a Word file.
 function downloadReceipt(p) {
   var blob = new Blob(["﻿", receiptHtml(p)], { type: "application/msword" });
   var a = document.createElement("a");
@@ -472,6 +523,7 @@ function downloadReceipt(p) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
 }
+// Builds the receipt of a payment and shows it.
 function receiptFor(kind, id) {
   var r = getRow(kind, id);
   if (!r) return toast("Receipt not found.");
@@ -530,9 +582,11 @@ function openForm(o) {
     }
   });
 }
+// Shows a simple popup with a title and an OK button.
 function openInfo(title, bodyHtml) {
   openModal("<h2>" + esc(title) + "</h2>" + bodyHtml + '<div class="modal-actions"><button class="btn primary" onclick="closeModal()">Done</button></div>');
 }
+// Asks 'are you sure?' and runs fn only if the user confirms.
 function confirmBox(title, text, label, fn, danger) {
   openForm({ title: title, intro: esc(text), fields: [], submit: label, onSubmit: async function () { return await fn(); } });
   if (danger) { var b = $("#modal button[type=submit]"); if (b) b.style.background = "#A02B1D"; }
@@ -554,6 +608,7 @@ async function callFn(name, body) {
   if (r.data && r.data.error) throw new Error(r.data.error);
   return r.data || {};
 }
+// Calls the manage-users Edge Function (create, reset, suspend, delete accounts).
 function callUsers(body) { return callFn("manage-users", body); }
 
 /* ---------- keep typing position while the page redraws ---------- */
@@ -577,6 +632,7 @@ var AUTH = ROLE === "admin"
   ? { wrap: "login-wrap", card: "login-card", badges: "login-badges", form: "login-form", err: "login-err", divider: "login-divider", links: "login-links" }
   : { wrap: "auth-wrap", card: "auth-card", badges: "auth-badges", form: "auth-form", err: "auth-err", divider: "auth-divider", links: "auth-links" };
 
+// The common frame of the sign-in screens (logo, card).
 function authPage(title, sub, inner, badges) {
   document.documentElement.setAttribute("data-theme", "light");
   $("#app").innerHTML = '<div class="' + AUTH.wrap + '"><a class="back-link" href="index.html">&larr; Back to website</a>' +
@@ -585,16 +641,20 @@ function authPage(title, sub, inner, badges) {
     (badges ? '<div class="' + AUTH.badges + '">' + badges.map(function (b) { return "<span>" + b + "</span>"; }).join("") + "</div>" : "") +
     '<div class="' + AUTH.form + '">' + inner + "</div></form></div>";
 }
+// The red error box on a sign-in screen.
 function authErr(id, msg) {
   return '<div class="' + AUTH.err + '" id="' + id + '"' + (msg ? "" : " hidden") + ">" + esc(msg || "") + "</div>";
 }
+// One labeled input box.
 function fieldHtml(label, name, type, extra) {
   return "<label>" + label + '</label><input name="' + name + '" type="' + (type || "text") + '" ' + (extra || "") + ">";
 }
+// One password box with a show/hide eye button.
 function pwField(label, name, auto) {
   return "<label>" + label + '</label><div class="pw-wrap"><input name="' + name + '" type="password" autocomplete="' + (auto || "current-password") +
     '" placeholder="••••••••"><button type="button" class="pw-toggle" data-pw="' + name + '">Show</button></div>';
 }
+// Makes the eye buttons show or hide the password.
 function bindPwToggles(root) {
   Array.prototype.forEach.call(root.querySelectorAll("[data-pw]"), function (b) {
     b.addEventListener("click", function () {
@@ -605,6 +665,7 @@ function bindPwToggles(root) {
   });
 }
 
+// Draws the sign-in page.
 function renderLogin(msg) {
   var admin = ROLE === "admin";
   authPage(admin ? "Administrator sign-in" : "Sign in to ResidentHub",
@@ -637,6 +698,7 @@ function renderLogin(msg) {
   });
 }
 
+// The choice 'send code by email or text message'.
 function chanHtml(opts, sel, info) {
   info = info || {};
   function one(v, title, sub) {
@@ -647,9 +709,12 @@ function chanHtml(opts, sel, info) {
     (opts.smsReady ? one("sms", "Text message (SMS)", info.phone ? "to " + esc(info.phone) : "to your mobile number") : "") +
     (opts.emailReady ? one("email", "Email (Gmail)", info.email ? "to " + esc(info.email) : "to your email address") : "") + "</div>";
 }
+// The default way to send a code (text if available, else email).
 function firstChan(opts) { return opts.smsReady ? "sms" : opts.emailReady ? "email" : ""; }
+// 'text message' or 'email', for messages shown to the user.
 function chanName(c) { return c === "sms" ? "text message" : "email"; }
 
+// Forgot-password screens (ask for email, enter the code, set a new password).
 function renderForgot() {
   var sent = false, email = "", chan = "", opts = null, wait = 0, tick = null;
   function draw(err) {
@@ -716,6 +781,7 @@ function renderForgot() {
   draw();
 }
 
+// Screen where a new resident must choose their own password.
 function renderNewPassword() {
   authPage("Choose your password", "CITY RESIDENCES CONDOMINIUM CORP.",
     '<p style="font-size:13px;color:var(--muted);line-height:1.55;margin:0;text-align:center">The administrator gave you a temporary password. Set your own to continue.</p>' +
@@ -742,6 +808,7 @@ function renderNewPassword() {
   });
 }
 
+// Screen where a resident confirms email and mobile using codes.
 function renderVerify() {
   var sent = false, wait = 0, tick = null, opts = null, chan = "", info = {};
   function draw(err) {
@@ -815,6 +882,7 @@ async function signOut(everywhere) {
   rhLeave();
   renderLogin();
 }
+// Runs after a successful sign-in: loads the profile, then boot().
 async function startSession(session) {
   DB.user = session.user;
   var p = await sb.from("profiles").select("*").eq("id", DB.user.id).maybeSingle();
@@ -835,6 +903,7 @@ async function startSession(session) {
   if (DB.profile.must_change_password) return renderNewPassword();
   await boot();
 }
+// Decides which screen to show after sign-in (change password, verify, or the dashboard).
 async function boot() {
   if (!isAdmin() && !DB.profile.contact_verified_at) return renderVerify();
   $("#app").innerHTML = '<div class="' + AUTH.wrap + '"><div class="' + AUTH.card + '" style="align-items:center"><img src="logo.jpg" alt=""><div class="name">Loading your data…</div></div></div>';
@@ -853,6 +922,7 @@ async function boot() {
 
 /* ---------- live updates ---------- */
 var chan = null, timer = null, reloadT = null, pendingDraw = false;
+// Starts listening for live changes so the page updates by itself.
 function startLive() {
   stopLive();
   try {
@@ -860,11 +930,14 @@ function startLive() {
   } catch (e) { /* the timer still refreshes */ }
   timer = setInterval(reload, 45000);
 }
+// Stops listening for live changes.
 function stopLive() {
   if (chan) { sb.removeChannel(chan); chan = null; }
   if (timer) { clearInterval(timer); timer = null; }
 }
+// Waits a moment, then reloads data (avoids many reloads at once).
 function scheduleReload() { clearTimeout(reloadT); reloadT = setTimeout(reload, 500); }
+// Re-reads all data from the database and redraws the page.
 async function reload() {
   if (!DB.user || DB.busy) return;
   try {
@@ -885,6 +958,7 @@ function rhRefresh(force) {
 }
 document.addEventListener("focusout", function () { if (pendingDraw) setTimeout(function () { if (pendingDraw) rhRefresh(false); }, 150); });
 
+// Starts the page: checks if someone is already signed in.
 function rhInit() {
   document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeModal(); });
   (async function () {
