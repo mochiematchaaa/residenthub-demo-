@@ -62,11 +62,13 @@ function viewFin() {
     }).join("") || '<p class="hint" style="margin:0">No payments recorded yet.</p>') +
     '<button class="btn" onclick="exportPayments()">Export payments (.csv)</button><button class="btn" onclick="exportDues()">Export dues (.csv)</button></div></aside></div>';
 }
+// Picks a due in the payment desk.
 function chooseDue(id) {
   state.payDue = id || "";
   render();
   if (id) { var el = document.getElementById("payDesk"); if (el && window.innerWidth < 1100) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
 }
+// Saves a changed rate (dues or parking).
 function saveRate(id, draftKey, label) {
   var n = parseFloat(state[draftKey]);
   if (!(n > 0)) return toast("Enter an amount above zero.");
@@ -77,14 +79,17 @@ function saveRate(id, draftKey, label) {
     toast(label + " saved.");
   });
 }
+// Deletes a due after confirming.
 function deleteDue(id) {
   confirmBox("Delete this charge?", "It will be removed for the resident too.", "Delete", async function () { await del("due", id); logAct("Charge deleted", "Finance"); }, true);
 }
+// Creates a payment record with a receipt number and marks the due as paid.
 async function issuePayment(unit, payer, forText, method, reference, amount, receiptNo) {
   var no = receiptNo || nextReceiptNo(), date = shortDate(new Date()), pid = nextId();
   await put("payment", pid, unit, { id: pid, receiptNo: no, unit: unit, payer: payer, forText: forText, method: method, reference: reference || "—", date: date, amount: amount });
   return { no: no, date: date };
 }
+// Admin records a payment received (cash, bank, GCash...).
 function recordPayment() {
   var row = state.payDue ? getRow("due", state.payDue) : null;
   if (!row) return toast("Choose an unpaid charge first.");
@@ -101,6 +106,7 @@ function recordPayment() {
     toast("Receipt " + r.no + " issued.");
   });
 }
+// Confirms a resident's payment proof and issues the receipt.
 function confirmProof(id) {
   var row = getRow("proof", id);
   if (!row || row.value.status !== "Pending") return;
@@ -133,6 +139,7 @@ function confirmProof(id) {
     toast(assigned ? "Payment confirmed. Slot " + assigned + " is now assigned to " + p.unit + "." : "Payment confirmed. Receipt " + p.receiptNo + " is ready for " + p.unit + ".");
   });
 }
+// Rejects a payment proof with a reason.
 function rejectProof(id) {
   var row = getRow("proof", id);
   if (!row || row.value.status !== "Pending") return;
@@ -142,6 +149,7 @@ function rejectProof(id) {
     toast("Payment details rejected. The resident will see this.");
   });
 }
+// Creates the monthly dues for the units.
 function billDues() {
   var now = new Date();
   openForm({
@@ -171,6 +179,7 @@ function billDues() {
     }
   });
 }
+// Popup form to add a special charge.
 function chargeForm() {
   var units = unitNames();
   if (!units.length) return toast("Add a unit first.");
@@ -190,6 +199,7 @@ function chargeForm() {
     }
   });
 }
+// Popup form to choose the allowed payment methods.
 function payMethodsForm() {
   var ms = payMethods(), fields = [];
   ms.forEach(function (m, i) {
@@ -205,10 +215,12 @@ function payMethodsForm() {
     }
   });
 }
+// Downloads payments as CSV.
 function exportPayments() {
   exportCSV("payments.csv", ["Receipt no.", "Date", "Unit", "Paid by", "Payment for", "Method", "Reference no.", "Amount"],
     newest(list("payment")).map(function (r) { var p = r.v; return [p.receiptNo, p.date, p.unit, p.payer, p.forText, p.method, p.reference, p.amount]; }));
 }
+// Downloads dues as CSV.
 function exportDues() {
   exportCSV("dues.csv", ["Unit", "For", "Due date", "Amount", "Status"], newest(list("due")).map(function (r) { return [r.v.unit, r.v.note, r.v.dueDate || "", r.v.amount, r.v.paid ? "Paid" : "Unpaid"]; }));
 }
@@ -217,6 +229,7 @@ function exportDues() {
    Expenses
    ========================================================================== */
 function expTotal(e) { return Number(e.qty || 1) * Number(e.unitPrice || 0); }
+// PAGE: Expenses.
 function viewExpenses() {
   var now = new Date();
   if (!state.expMonth) state.expMonth = now.getFullYear() + "-" + pad(now.getMonth() + 1);
@@ -237,6 +250,7 @@ function viewExpenses() {
     '<div class="card"><label class="stat-label" for="expDay">Daily expenses</label><input id="expDay" type="date" value="' + escAttr(state.expDay) + '" onchange="set({expDay:this.value})"><div class="stat-value">' + peso(dayTotal) + "</div></div></div>" +
     '<div class="card" style="padding:0;overflow:hidden">' + tableRows(rows, ["DATE", "ITEM", "CATEGORY", "FOR", "TOTAL", ""], "No purchases recorded for this month.") + "</div>";
 }
+// Popup form to add or edit an expense.
 function expenseForm(id) {
   var e = id ? (getRow("expense", id) || {}).value || {} : {};
   openForm({
@@ -264,9 +278,11 @@ function expenseForm(id) {
     }
   });
 }
+// Deletes an expense.
 function deleteExpense(id) {
   confirmBox("Delete this purchase?", "This cannot be undone.", "Delete", async function () { await del("expense", id); logAct("Purchase deleted", "Expenses"); }, true);
 }
+// Downloads expenses as CSV.
 function exportExpenses() {
   var rows = newest(list("expense")).filter(function (r) { return String(r.v.date || "").slice(0, 7) === state.expMonth; });
   exportCSV("expenses-" + state.expMonth + ".csv", ["Date", "Item", "Category", "For", "Store", "OR no.", "Qty", "Price of one", "Total"],
@@ -297,7 +313,9 @@ function reportData() {
   });
   return { units: units, nUnpaid: nUnpaid, gr: gr, months: months, age: age, fac: fac };
 }
+// '2026-10-16' -> 'Oct 16, 2026'.
 function shortDateFromKey(k) { var p = String(k).split("-"); return p.length === 3 ? MONTHS[+p[1] - 1] + " " + (+p[2]) + ", " + p[0] : ""; }
+// PAGE: Reports.
 function viewReports() {
   var r = reportData(), total = r.units.length;
   var rate = total ? Math.round((total - r.nUnpaid) / total * 100) + "%" : "—";
@@ -319,6 +337,7 @@ function viewReports() {
     '<div class="card"><h2>Facility use this month</h2><p class="hint">Approved bookings.</p>' + (r.fac.some(function (f) { return f.value; }) ? barChart(r.fac) : empty) + "</div>" +
     '<div class="card"><h2>Poll turnout</h2><p class="hint">Units that voted in each open poll.</p>' + (openPolls.map(function (p) { return progressBar(esc(p.q), list("vote").filter(function (x) { return Number(x.v.poll) === p.id; }).length, total, "blue"); }).join("") || '<p class="empty">No open polls.</p>') + "</div></div>";
 }
+// Downloads the summary report as a CSV file.
 function downloadReport() {
   var r = reportData(), c = counts(), total = r.units.length;
   exportCSV("city-residences-report.csv", ["Metric", "Value"], [
@@ -349,6 +368,7 @@ function viewReq() {
         (d.audience === "admin" ? '<span class="chip warn">Admin only</span>' : "") + '<button class="btn" style="min-height:32px;padding:0 10px;font-size:12px" onclick="openDoc(\'' + escAttr(r.id) + '\')">View</button><button class="btn" style="min-height:32px;padding:0 10px;font-size:12px;color:#A02B1D" onclick="removeDoc(\'' + escAttr(r.id) + '\')">Delete</button></div>';
     }).join("") || '<div style="padding:18px;border-top:1px solid var(--border2);color:var(--muted)">No documents yet. Upload a file (up to 2 MB).</div>') + "</div>";
 }
+// Moves a grievance to its next stage.
 function advanceGr(id) {
   var row = getRow("grievance", id); if (!row) return;
   act(async function () {
@@ -357,6 +377,7 @@ function advanceGr(id) {
     logAct("Grievance " + (st === 2 ? "resolved" : "in progress") + ": " + row.value.title, "Requests");
   });
 }
+// Uploads a document for residents.
 function uploadDoc(input) {
   var file = input.files && input.files[0]; if (!file) return;
   if (file.size > 2 * 1024 * 1024) { input.value = ""; return toast("That file is bigger than 2 MB. Choose a smaller file."); }
@@ -375,6 +396,7 @@ function uploadDoc(input) {
   };
   rd.readAsDataURL(file);
 }
+// Deletes a document.
 function removeDoc(id) {
   confirmBox("Delete this document?", "Residents will no longer see it.", "Delete", async function () { await del("doc", id); logAct("Document deleted", "Documents"); }, true);
 }
@@ -383,6 +405,7 @@ function removeDoc(id) {
    Parking
    ========================================================================== */
 function sortedSlots() { return list("slot").sort(function (a, b) { return naturalCompare(a.id, b.id); }); }
+// PAGE: Parking (slots, requests, rentals).
 function viewParking() {
   var slots = sortedSlots(), used = slots.filter(function (s) { return s.v.unit; }).length, rate = setting("motor_rate").rate || 0;
   var monthly = slots.filter(function (s) { return s.v.unit && s.v.plan !== "day"; }).length, daily = used - monthly;
@@ -427,6 +450,7 @@ function freshSlotIds(n) {
   while (out.length < n) { i++; var id = "M-" + pad(i); if (!used[id]) out.push(id); }
   return out;
 }
+// Popup form to add parking slots.
 function addSlotsForm() {
   openForm({
     title: "Add motor parking slots", intro: "How many slots should be added? Existing slots stay as they are.",
@@ -440,6 +464,7 @@ function addSlotsForm() {
     }
   });
 }
+// Click on a slot: shows who has it, or (if free) the form to assign it to a unit.
 function openSlot(id) {
   var s = getRow("slot", id); if (!s) return;
   if (s.value.unit) {
@@ -452,6 +477,7 @@ function openSlot(id) {
     openModal("<h2>" + esc(id) + '</h2><p>This slot is free. Choose a unit and how long it rents it, or rename or delete the slot.</p>' + pick + (choices.length ? plan : "") + '<div class="modal-actions">' + (choices.length ? '<button class="btn primary" onclick="assignSlot(\'' + escAttr(id) + '\')">Assign slot</button>' : "") + '<button class="btn" onclick="renameSlotForm(\'' + escAttr(id) + '\')">Rename</button><button class="btn" style="color:#A02B1D" onclick="removeSlot(\'' + escAttr(id) + '\')">Delete</button><button class="btn" onclick="closeModal()">Cancel</button></div>');
   }
 }
+// Assigns a slot to a unit.
 function assignSlot(id) {
   var unit = document.getElementById("pkUnit").value, plan = document.getElementById("pkPlan").value, days = parseInt(document.getElementById("pkDays").value, 10) || 1;
   closeModal();
@@ -475,6 +501,7 @@ function removeRental(id) {
     toast(unit + " removed. " + id + " is free.");
   }, true);
 }
+// Popup form to rename a slot.
 function renameSlotForm(id) {
   var s = getRow("slot", id); closeModal(); if (!s) return;
   openForm({
@@ -491,6 +518,7 @@ function renameSlotForm(id) {
     }
   });
 }
+// Deletes a parking slot.
 function removeSlot(id) {
   var s = getRow("slot", id); closeModal(); if (!s) return;
   var unit = s.value.unit;
@@ -500,6 +528,7 @@ function removeSlot(id) {
     logAct("Parking slot " + id + " deleted" + (unit ? " (was " + unit + ")" : ""), "Parking");
   }, true);
 }
+// Approves a parking request and gives the unit its chosen slot (or the first free one).
 function approveParking(unit) {
   var rq = getRow("request", unit); if (!rq) return;
   var chosen = rq.value.slot ? getRow("slot", rq.value.slot) : null;
@@ -524,6 +553,7 @@ function approveParkingFree(unit) {
     logAct("Parking slot " + id + " assigned to " + unit + " without payment", "Parking");
   }, true);
 }
+// Declines a parking request.
 function declineParking(unit) {
   act(async function () { await del("request", unit); logAct("Parking request declined, " + unit, "Parking"); });
 }
@@ -549,6 +579,7 @@ function viewRentals() {
       return '<tr><td style="font-weight:700">' + esc(r.id) + "</td><td>" + esc(r.v.name || "—") + "</td><td>" + usageCellHtml(r.v) + '</td><td style="color:var(--muted)">' + esc(r.v.statusNote || "") + '</td><td><button class="btn" style="min-height:32px;padding:0 10px;font-size:12px" onclick="setUsageForm(\'' + escAttr(r.id) + '\')">Change</button></td></tr>';
     }), ["UNIT", "RESIDENT", "USAGE", "NOTE", ""], "No units yet.") + "</div>";
 }
+// Approves or rejects a unit's rental/business usage request.
 function rentalAct(unit, decision) {
   var u = unitRec(unit); if (!u) return;
   var el = document.getElementById("rentalNote-" + unit.replace(/\s+/g, "")), note = el ? el.value.trim() : "";
@@ -557,6 +588,7 @@ function rentalAct(unit, decision) {
     logAct((decision === "approved" ? "Approved" : "Rejected") + " unit usage declaration for " + unit, "Units");
   });
 }
+// Popup form for the admin to set a unit's usage.
 function setUsageForm(unit) {
   var u = unitRec(unit) || {};
   openForm({
@@ -590,7 +622,9 @@ function pagerHtml(total, page, size, fn) {
     '<button class="pg-btn" ' + (page >= pages - 1 ? "disabled" : "") + ' onclick="' + fn + "(" + (page + 1) + ')" aria-label="Next page">Next ›</button>' +
     '<button class="pg-btn" ' + (page >= pages - 1 ? "disabled" : "") + ' onclick="' + fn + "(" + (pages - 1) + ')" aria-label="Last page">»</button></div></div>';
 }
+// Goes to another page of the activity log.
 function goLogPage(n) { state.logPage = Math.max(0, n); render(); window.scrollTo({ top: 0, behavior: "smooth" }); }
+// PAGE: Activity log.
 function viewLog() {
   var rows = newest(list("activity")), pages = Math.max(1, Math.ceil(rows.length / LOG_PAGE));
   var page = Math.min(Math.max(0, state.logPage || 0), pages - 1);
@@ -599,6 +633,7 @@ function viewLog() {
       return '<tr><td style="color:var(--muted);white-space:nowrap">' + new Date(Number(r.v.at)).toLocaleString() + '</td><td style="font-weight:700">' + esc(r.v.area || "") + "</td><td>" + esc(r.v.title) + "</td></tr>";
     }), ["WHEN", "AREA", "ACTION"], "Nothing has been recorded yet.") + (rows.length > LOG_PAGE ? pagerHtml(rows.length, page, LOG_PAGE, "goLogPage") : "") + "</div>";
 }
+// Downloads the activity log as CSV.
 function exportLog() { exportCSV("activity-log.csv", ["When", "Area", "Action"], newest(list("activity")).map(function (r) { return [new Date(Number(r.v.at)).toLocaleString(), r.v.area || "", r.v.title]; })); }
 
 /* ==========================================================================
@@ -627,12 +662,15 @@ function viewManage() {
     }), ["NAME", "EMAIL", "MOBILE", "UNIT", "ROLE", "STATUS", "ACTION"], "No accounts match.") +
     '<div style="padding:10px 18px;font-size:12px;color:var(--muted);border-top:1px solid var(--border2)">Suspend keeps the account on file but blocks sign-in; Revoke permanently removes it and asks for confirmation first.</div></div>';
 }
+// Finds an account by its id.
 function accById(id) { return DB.accounts.filter(function (a) { return a.id === id; })[0]; }
+// Shows a temporary password once, right after creating or resetting an account.
 function showPassword(name, email, pw) {
   openInfo("Temporary password", '<p>Give this to <b>' + esc(name) + "</b> (" + esc(email) + '). It is shown only now. They must choose their own password when they sign in, then enter a code sent to their email (or by text message, when that is set up).</p><p style="font:700 22px monospace;letter-spacing:.06em;background:var(--beige);padding:12px;border-radius:12px;text-align:center;user-select:all">' + esc(pw) + "</p>");
 }
 /* Unit box on "Create a resident account": type to search, or pick from the list (styled, not the browser's own list) */
 function unitNorm(t) { return String(t || "").toLowerCase().replace(/unit/g, "").replace(/[^a-z0-9]/g, ""); }
+// Shows the unit suggestions under the Unit box while typing.
 function unitSuggest(inp) {
   state.manage.unit = inp.value;
   var menu = document.getElementById("mUnitMenu"); if (!menu) return;
@@ -643,12 +681,15 @@ function unitSuggest(inp) {
     : '<div class="combo-none">No unit like that. Add it under Units first.</div>';
   menu.hidden = false;
 }
+// Puts the clicked suggestion in the Unit box.
 function unitPick(u) {
   state.manage.unit = u;
   var i = document.getElementById("mUnit"); if (i) i.value = u;
   unitMenuHide();
 }
+// Hides the unit suggestions.
 function unitMenuHide() { var m = document.getElementById("mUnitMenu"); if (m) m.hidden = true; }
+// Keyboard support (arrows, Enter, Esc) in the unit suggestions.
 function unitKey(e) {
   var menu = document.getElementById("mUnitMenu"); if (!menu || menu.hidden) return;
   var opts = Array.prototype.slice.call(menu.querySelectorAll(".combo-opt")), cur = opts.findIndex(function (o) { return o.classList.contains("on"); });
@@ -660,6 +701,7 @@ function unitKey(e) {
   } else if (e.key === "Enter" && cur >= 0) { e.preventDefault(); opts[cur].dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })); }
   else if (e.key === "Escape") unitMenuHide();
 }
+// Creates a resident account (calls the manage-users Edge Function).
 function createAccount() {
   var m = state.manage, units = unitNames();
   /* the unit is typed (or picked from the list); "12a" and "Unit 12A" both match the unit on record */
@@ -679,6 +721,7 @@ function createAccount() {
     showPassword(nm, r.email, r.password);
   });
 }
+// Gives the resident a new temporary password.
 function resetAccount(id) {
   var a = accById(id); if (!a) return;
   confirmBox("Reset password?", "A new temporary password will be made for " + a.name + ".", "Reset", async function () {
@@ -688,6 +731,7 @@ function resetAccount(id) {
     return { keepOpen: true };
   });
 }
+// Suspends or restores an account.
 function suspendAccount(id) {
   var a = accById(id); if (!a) return;
   confirmBox((a.suspended ? "Reactivate " : "Suspend ") + a.name + "?", a.suspended ? "They will be able to sign in again." : "They will not be able to sign in.", a.suspended ? "Reactivate" : "Suspend", async function () {
@@ -695,6 +739,7 @@ function suspendAccount(id) {
     await loadAccounts(); logAct((a.suspended ? "Account reactivated: " : "Account suspended: ") + a.unit, "Access");
   });
 }
+// Deletes an account.
 function deleteAccount(id) {
   var a = accById(id); if (!a) return;
   confirmBox("Permanently revoke access for " + a.name + "?", "This removes their account and cannot be undone.", "Revoke", async function () {
@@ -702,6 +747,7 @@ function deleteAccount(id) {
     await loadAccounts(); logAct("Account deleted: " + a.unit, "Access");
   }, true);
 }
+// Downloads accounts as CSV.
 function exportAccounts() {
   exportCSV("residenthub-accounts.csv", ["Name", "Email", "Mobile", "Unit", "Role", "Status"], DB.accounts.map(function (a) { return [a.name, a.email, a.phone || "", a.unit || "", a.role, a.suspended ? "Suspended" : "Active"]; }));
 }
@@ -710,6 +756,7 @@ function exportAccounts() {
    Settings and profile
    ========================================================================== */
 function directory() { var d = setting("directory"); return { contacts: d.contacts || [], rules: d.rules || [] }; }
+// PAGE: Settings (contacts, rules, payment methods, password).
 function viewSettings() {
   var d = directory();
   return '<div class="two-col-e"><div style="display:flex;flex-direction:column;gap:16px">' +
@@ -720,18 +767,23 @@ function viewSettings() {
     '<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h2>House rules</h2><button class="btn primary" onclick="ruleForm()">+ Add</button></div>' +
     (d.rules.map(function (r, i) { return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border2)"><div><b style="font-size:14px">' + esc(r[0]) + '</b><div style="font-size:12px;color:var(--muted)">' + esc(r[1]) + '</div></div><button class="btn" style="min-height:30px;padding:0 10px;font-size:12px;color:#A02B1D" onclick="removeDirItem(\'rules\',' + i + ')">Remove</button></div>'; }).join("") || '<p class="empty">No rules yet.</p>') + "</div></div></div>";
 }
+// Saves the contacts and house rules.
 function saveDirectory(d) { return put("setting", "directory", "", { contacts: d.contacts, rules: d.rules }); }
+// Popup form to add an emergency contact.
 function contactForm() {
   openForm({ title: "Add contact", fields: [{ name: "name", label: "Name", placeholder: "e.g. Security desk" }, { name: "note", label: "Note", placeholder: "e.g. Open 24 hours" }, { name: "tel", label: "Number", placeholder: "e.g. Local 101" }],
     onSubmit: async function (f) { if (!f.name || !f.tel) return { error: "Enter a name and a number." }; var d = directory(); d.contacts.push({ name: f.name, note: f.note, tel: f.tel }); await saveDirectory(d); logAct("Directory updated", "Settings"); } });
 }
+// Popup form to add a house rule.
 function ruleForm() {
   openForm({ title: "Add house rule", fields: [{ name: "t", label: "Title", placeholder: "e.g. Quiet hours" }, { name: "x", label: "Rule", type: "textarea" }],
     onSubmit: async function (f) { if (!f.t || !f.x) return { error: "Enter a title and the rule." }; var d = directory(); d.rules.push([f.t, f.x]); await saveDirectory(d); logAct("House rules updated", "Settings"); } });
 }
+// Removes a contact or a rule.
 function removeDirItem(kind, i) {
   act(async function () { var d = directory(); d[kind].splice(i, 1); await saveDirectory(d); logAct("Directory updated", "Settings"); });
 }
+// Popup form to change your own password.
 function changePasswordForm() {
   openForm({
     title: "Change password",
@@ -747,6 +799,7 @@ function changePasswordForm() {
     }
   });
 }
+// PAGE: My profile.
 function viewProfile() {
   var p = DB.profile, mine = newest(list("activity")).slice(0, 5);
   return '<div class="profile-grid"><div class="profile-col"><div class="card"><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="avatar big">' + esc(initials(adminName())) + "</span><div><h2>" + esc(adminName()) + '</h2><p style="margin:2px 0 8px;color:var(--muted)">Administrator · City Residences Condominium Corporation</p><span class="chip good">Verified admin</span></div></div></div>' +
@@ -771,6 +824,7 @@ function searchIndex() {
     DB.accounts.map(function (a) { return { t: esc(a.name), s: esc(a.role + " · " + a.email), tag: "Account", v: "manage" }; }),
     pages.map(function (p) { return { t: p[0], s: "Open this page", tag: "Page", v: p[1] }; }));
 }
+// The items in the notification bell (what needs the admin's attention).
 function bellItems() {
   var c = counts(), l = [];
   if (c.bookings) l.push({ t: c.bookings + " booking request" + (c.bookings > 1 ? "s" : "") + " to review", s: "Facility", v: "fac" });

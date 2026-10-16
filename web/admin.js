@@ -13,11 +13,17 @@ var state = {
 };
 try { state.darkMode = localStorage.getItem("rh_dark") === "1"; } catch (e) { /* storage blocked */ }
 
+// Called by core.js after sign-in: shows the dashboard.
 function rhEnter() { state.authed = true; state.view = "home"; render(); }
+// Called by core.js on sign-out: clears the page state.
 function rhLeave() { state.authed = false; state.view = "home"; }
+// Signs the administrator out.
 function doLogout() { signOut(); }
+// The administrator's name.
 function adminName() { return (DB.profile && (DB.profile.name || DB.profile.email)) || "Administrator"; }
+// First word of the name, for the greeting.
 function firstName() { return String(adminName()).split(/\s+/)[0]; }
+// True for unit usages that the admin must approve (short-term rental, business).
 function needsApproval(u) { return u && (u.usage === "shortterm" || u.usage === "business"); }
 
 /* ---------- counts used on several pages ---------- */
@@ -31,11 +37,14 @@ function counts() {
     proofs: vals("proof").filter(function (p) { return p.status === "Pending"; }).length
   };
 }
+// Number of active resident accounts.
 function residentCount() { return DB.accounts.filter(function (a) { return a.role === "resident" && !a.suspended; }).length; }
+// Total payments received this month.
 function monthEarnings() {
   var k = thisMonthKey();
   return vals("payment").filter(function (p) { return monthOf(p.date) === k; }).reduce(function (s, p) { return s + Number(p.amount || 0); }, 0);
 }
+// Color of an announcement type chip (Emergency = red...).
 function typeChipClass(t) { return t === "Emergency" ? "bad" : t === "Warning" ? "warn" : t === "Maintenance" ? "info" : ""; }
 
 /* ---------- page frame ---------- */
@@ -58,6 +67,7 @@ function titles() {
     profile: ["My profile", "Your administrator account, recent activity and shortcuts."]
   }[state.view] || ["", ""];
 }
+// Picks the page function to draw for state.view.
 function view() {
   var f = { home: viewHome, units: viewUnits, fac: viewFac, expenses: viewExpenses, fin: viewFin, manage: viewManage, ann: viewAnn,
     rentals: viewRentals, polls: viewPolls, reports: viewReports, parking: viewParking, log: viewLog, settings: viewSettings,
@@ -65,6 +75,7 @@ function view() {
   return f();
 }
 
+// Draws the whole admin dashboard (menu + current page). Called after every change.
 function render() {
   if (!state.authed) return;
   document.documentElement.setAttribute("data-theme", state.darkMode ? "dark" : "light");
@@ -98,12 +109,19 @@ function render() {
 
 /* small building blocks */
 function inputStyle() { return 'style="height:44px;border:1px solid #CFC3A9;border-radius:10px;padding:0 12px;font-size:14px"'; }
+// A card that says 'nothing here yet'.
 function emptyCard(text) { return '<div class="card" style="text-align:center;color:var(--muted)">' + text + "</div>"; }
+// A small card with a label and a big number.
 function statCard(label, value) { return '<div class="card"><div class="stat-label">' + esc(label) + '</div><div class="stat-value">' + esc(value) + "</div></div>"; }
+// All units in natural order (Unit 2 before Unit 10).
 function sortedUnits() { return list("unit").sort(function (a, b) { return naturalCompare(a.id, b.id); }); }
+// Just the unit names.
 function unitNames() { return sortedUnits().map(function (r) { return r.id; }); }
+// The resident account that belongs to a unit.
 function accountOfUnit(unit) { return DB.accounts.filter(function (a) { return a.role === "resident" && a.unit === unit; })[0]; }
+// Household name of a unit (or the unit name if none).
 function whoOf(unit) { var u = unitRec(unit) || {}; return u.name && u.name !== "—" ? u.name : unit; }
+// Builds a table from rows; shows a message if there are no rows.
 function tableRows(rows, cols, empty) {
   if (!rows.length) return '<div style="padding:22px;text-align:center;color:var(--muted)">' + empty + "</div>";
   return '<table><thead><tr>' + cols.map(function (c) { return "<th>" + c + "</th>"; }).join("") + "</tr></thead><tbody>" + rows.join("") + "</tbody></table>";
@@ -118,12 +136,14 @@ function homeSummary() {
   if (!c.unpaid && !c.bookings && !c.grievances && !c.proofs) return "Nothing is waiting for you today at City Residences.";
   return c.unpaid + " unpaid dues, " + c.bookings + " booking requests and " + c.grievances + " open grievances are waiting for you today at City Residences.";
 }
+// The right column of the home page (upcoming events and bookings).
 function homeAside() {
   var ev = newest(list("event")).map(function (r) { return [esc(r.v.title), esc(r.v.place || ""), esc(r.v.date || "")]; });
   var bk = newest(list("booking")).filter(function (r) { return r.v.status === "Approved"; })
     .map(function (r) { return [esc(r.v.place) + " booking", esc(r.v.who || r.v.unit), esc(r.v.when || "")]; });
   return asideHtml(ev.concat(bk).slice(0, 4), "Add event", "ann");
 }
+// PAGE: Home / overview.
 function viewHome() {
   var c = counts(), units = list("unit").length;
   var dues = newest(list("due")).slice(0, 12).reverse();
@@ -163,16 +183,19 @@ function viewHome() {
    Units
    ========================================================================== */
 function usageChipClass(u) { return (u === "shortterm" || u === "business") ? "warn" : u === "tenant" ? "info" : "good"; }
+// The usage chip in the Units table.
 function usageCellHtml(u) {
   if (!u.usage) return '<span style="color:var(--muted)">—</span>';
   var st = needsApproval(u) ? (u.usageStatus === "approved" ? " · Approved" : u.usageStatus === "rejected" ? " · Rejected" : " · Pending") : "";
   return '<span class="chip ' + usageChipClass(u.usage) + '" title="' + escAttr(u.statusNote || "") + '">' + esc(usageLabel(u.usage)) + st + "</span>";
 }
+// True if the text contains every word typed in the search box.
 function matchesSearch(content, query) {
   var norm = function (v) { return String(v == null ? "" : v).normalize("NFKD").replace(/[̀-ͯ]/g, "").toLocaleLowerCase(); };
   var text = norm(content);
   return norm(query).trim().split(/\s+/).filter(Boolean).every(function (w) { return text.indexOf(w) >= 0; });
 }
+// PAGE: Units (list, add, import, export).
 function viewUnits() {
   var rows = sortedUnits().filter(function (r) {
     var u = r.v, bal = balanceFor(r.id);
@@ -193,19 +216,24 @@ function viewUnits() {
     '<button class="btn" onclick="exportUnits()">Export CSV</button></div>' +
     '<div class="card" style="padding:0;overflow:hidden">' + tableRows(html, ["UNIT", "RESIDENT / OWNER", "OCCUPANCY", "STATUS", "CONTACT", "USAGE", "BALANCE", ""], list("unit").length ? "No units match your search." : "No units yet. Tap “Add unit” or import a CSV.") + "</div>";
 }
+// Downloads the units as a CSV file.
 function exportUnits() {
   exportCSV("units.csv", ["Unit", "Resident/Owner", "Occupancy", "Status", "Contact", "Usage", "Usage details"], sortedUnits().map(function (r) {
     return [r.id, r.v.name || "", r.v.type || "", r.v.status || "", r.v.contact || "", usageLabel(r.v.usage), r.v.statusNote || ""];
   }));
 }
+// Downloads an empty CSV template for importing units.
 function unitsTemplate() { exportCSV("units-template.csv", ["Unit", "Household", "Occupancy", "Status", "Contact"], []); }
+// Makes a unit name tidy: 'unit  101' -> 'Unit 101'.
 function cleanUnitLabel(s) {
   var t = String(s || "").replace(/[^A-Za-z0-9 \-]/g, "").replace(/\s+/g, " ").trim();
   if (!t) return "";
   if (!/^unit /i.test(t)) t = "Unit " + t;
   return "Unit " + t.slice(5).trim().toUpperCase();
 }
+// True if a unit with this name already exists.
 function unitExists(label) { return unitNames().some(function (k) { return k.toLowerCase() === label.toLowerCase(); }); }
+// Popup form to add or edit a unit.
 function unitForm(edit) {
   var u = edit ? unitRec(edit) || {} : {};
   openForm({
@@ -230,6 +258,7 @@ function unitForm(edit) {
     }
   });
 }
+// Deletes a unit after confirming.
 function removeUnit(id) {
   var hasAcc = !!accountOfUnit(id);
   closeModal();
@@ -238,6 +267,7 @@ function removeUnit(id) {
     await del("unit", id); logAct("Unit removed: " + id, "Units");
   }, true);
 }
+// Popup with the details of one unit.
 function showUnit(unit) {
   var u = unitRec(unit); if (!u) return;
   var bal = balanceFor(unit), acc = accountOfUnit(unit);
@@ -251,6 +281,7 @@ function showUnit(unit) {
     '<button class="btn" onclick="closeModal();setUsageForm(\'' + escAttr(unit) + '\')">Change usage</button>' +
     '<button class="btn" style="color:#A02B1D" onclick="removeUnit(\'' + escAttr(unit) + '\')">Remove</button></div>');
 }
+// Reads CSV text into rows (handles quotes).
 function parseCSV(text) {
   var rows = [], row = [], cur = "", q = false;
   text = String(text).replace(/^﻿/, "");
@@ -266,6 +297,7 @@ function parseCSV(text) {
   row.push(cur); if (row.some(function (c) { return c.trim(); })) rows.push(row);
   return rows;
 }
+// Adds many units from an uploaded CSV file.
 function importUnits(input) {
   var file = input.files && input.files[0]; if (!file) return;
   var rd = new FileReader();
@@ -302,6 +334,7 @@ function bookingAt(f, i) {
   var today = dayKey(new Date()), place = (facilities()[f] || {}).name;
   return vals("booking").filter(function (x) { return x.day === today && Number(x.slot) === i && x.place === place && (x.status === "Pending" || x.status === "Approved"); })[0];
 }
+// PAGE: Facility (booking requests and time slots).
 function viewFac() {
   var bookings = newest(list("booking"));
   var order = { Pending: 0, Approved: 1, Denied: 2 };
@@ -329,6 +362,7 @@ function viewFac() {
     '<div class="card" style="padding:0;overflow:hidden;margin-top:16px"><div style="display:flex;align-items:center;padding:14px 18px"><h2 style="font-size:19px;flex-grow:1">Reservation requests</h2><button class="btn" onclick="exportBookings()">Export to Excel (.csv)</button></div>' +
     tableRows(rows, ["FACILITY", "UNIT", "WHEN", "STATUS", ""], "No reservation requests yet.") + "</div>";
 }
+// Blocks or opens one time slot of a facility.
 function toggleSlot(f, i) {
   var bk = bookingAt(f, i);
   if (bk && !slotClosed(f, i)) return toast("Already reserved by " + bk.unit + ". Deny or cancel the booking to free it.");
@@ -371,6 +405,7 @@ function amenityForm(id) {
     }
   });
 }
+// Removes a facility from the list.
 function removeAmenity(id) {
   var a = amenities().filter(function (x) { return x.id === id; })[0]; if (!a) return;
   if (amenities().length <= 1) { toast("Keep at least one amenity so residents can still book."); return; }
@@ -381,6 +416,7 @@ function removeAmenity(id) {
     logAct("Amenity removed: " + a.name, "Facilities");
   }, true);
 }
+// Approves or declines a booking request.
 function setBooking(id, status) {
   var row = getRow("booking", id); if (!row) return;
   act(async function () {
@@ -388,6 +424,7 @@ function setBooking(id, status) {
     logAct(row.value.place + " booking " + status.toLowerCase() + ", " + row.value.unit, "Facilities");
   });
 }
+// Downloads the bookings as CSV.
 function exportBookings() {
   exportCSV("reservations.csv", ["Facility", "Unit", "Resident", "When", "Status"], newest(list("booking")).map(function (r) { return [r.v.place, r.v.unit, r.v.who || "", r.v.when, r.v.status]; }));
 }
@@ -421,6 +458,7 @@ function viewAnn() {
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--border2)"><div><div style="font-weight:700;font-size:14px">' + esc(e.title) + '</div><div style="font-size:12px;color:var(--muted)">' + esc(e.date) + " · " + esc(e.place) + " · " + going + ' going</div></div><span style="display:flex;gap:6px"><button class="btn" style="min-height:32px;padding:0 10px;font-size:12px" onclick="eventForm(\'' + escAttr(r.id) + '\')">Edit</button><button class="btn" style="min-height:32px;padding:0 10px;font-size:12px;color:#A02B1D" onclick="deleteEvent(\'' + escAttr(r.id) + '\')">Delete</button></span></div>';
     }).join("") || '<p class="empty">No events yet.</p>') + "</div></div>";
 }
+// Saves a new announcement draft from the form.
 function addAnnouncement() {
   var title = state.newAnnTitle.trim();
   if (!title) return toast("Enter a title first.");
@@ -432,6 +470,7 @@ function addAnnouncement() {
     toast("Announcement published. Residents can see it now.");
   });
 }
+// Publishes an announcement so residents can see it.
 function publishAnn(id) {
   var row = getRow("announcement", id); if (!row) return;
   act(async function () {
@@ -439,6 +478,7 @@ function publishAnn(id) {
     logAct("Announcement published: " + row.value.title, "Announcements");
   });
 }
+// Popup form to edit an announcement.
 function editAnn(id) {
   var row = getRow("announcement", id); if (!row) return;
   var a = row.value;
@@ -453,9 +493,11 @@ function editAnn(id) {
     }
   });
 }
+// Deletes an announcement.
 function deleteAnn(id) {
   confirmBox("Delete announcement?", "Residents will no longer see it.", "Delete", async function () { await del("announcement", id); logAct("Announcement deleted", "Announcements"); }, true);
 }
+// Popup form to add or edit an event.
 function eventForm(id) {
   var e = id ? (getRow("event", id) || {}).value || {} : {};
   openForm({
@@ -470,6 +512,7 @@ function eventForm(id) {
     }
   });
 }
+// Deletes an event.
 function deleteEvent(id) {
   confirmBox("Delete event?", "Residents will no longer see it.", "Delete", async function () {
     await del("event", id);
@@ -478,9 +521,11 @@ function deleteEvent(id) {
     logAct("Event deleted", "Events");
   }, true);
 }
+// Downloads announcements as CSV.
 function exportAnnouncements() {
   exportCSV("announcements.csv", ["Title", "Body", "Type", "Date", "Status"], newest(list("announcement")).map(function (r) { return [r.v.title, r.v.body, r.v.type || "General", r.v.date, r.v.status || "Published"]; }));
 }
+// Downloads events as CSV.
 function exportEvents() { exportCSV("events.csv", ["Title", "Date", "Venue"], newest(list("event")).map(function (r) { return [r.v.title, r.v.date, r.v.place]; })); }
 
 /* ==========================================================================
@@ -502,6 +547,7 @@ function viewPolls() {
     '<label class="fl">Options (one per line)<textarea id="newPollOpts" rows="4" oninput="state.newPollOpts=this.value" placeholder="Yes&#10;No&#10;Not sure">' + esc(state.newPollOpts) + '</textarea></label>' +
     '<button class="btn primary" onclick="addPoll()">Publish poll</button></div></div>';
 }
+// Creates a new poll from the form.
 function addPoll() {
   var options = state.newPollOpts.split("\n").map(function (s) { return s.trim(); }).filter(Boolean);
   if (!state.newPollQ.trim() || options.length < 2) return toast("Add a question and at least two options.");
@@ -513,6 +559,7 @@ function addPoll() {
     toast("Poll published. Residents can vote now.");
   });
 }
+// Opens or closes voting on a poll.
 function togglePoll(id) {
   var row = getRow("poll", id); if (!row) return;
   act(async function () {
@@ -521,6 +568,7 @@ function togglePoll(id) {
     logAct((open ? "Poll reopened: " : "Poll closed: ") + row.value.question, "Polls");
   });
 }
+// Deletes a poll.
 function deletePoll(id) {
   var row = getRow("poll", id); if (!row) return;
   confirmBox("Delete this poll?", "The poll and its results will be removed.", "Delete", async function () {
@@ -530,6 +578,7 @@ function deletePoll(id) {
     logAct("Poll deleted: " + row.value.question, "Polls");
   }, true);
 }
+// Downloads one poll's results as CSV.
 function exportPoll(id) {
   var p = pollsAll().filter(function (x) { return x.id === Number(id); })[0]; if (!p) return;
   exportCSV("poll-results.csv", ["Option", "Votes"], p.options.map(function (o) { return [o.t, o.votes]; }));

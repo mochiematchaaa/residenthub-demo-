@@ -34,22 +34,29 @@ const NAV_ICONS = {
   moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/>'
 };
+// Returns the SVG icon with this name (see the icons table above).
 function icon(name){
   return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${NAV_ICONS[name]||""}</svg>`;
 }
 
 /* 2 ---------- Small helpers ---------- */
 function peso(n){ return "₱" + n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+// Changes the page state and redraws. Buttons use it, e.g. set({view:'units'}).
 function set(patch){ Object.assign(state, patch); render(); }
+// Makes text safe to put inside an HTML attribute.
 function escAttr(s){ return String(s==null?"":s).replace(/'/g,"&#39;").replace(/"/g,"&quot;"); }
+// Switches between light and dark mode.
 function toggleDarkMode(){ set({ darkMode: !state.darkMode }); }
+// 'Good morning / afternoon / evening'.
 function greeting(){
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
 }
+// Today's date as text, e.g. 'Friday, October 16'.
 function todayLabel(){
   return new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
 }
+// One button in the side menu.
 function navBtn(key,label,tag){
   return `<button class="${state.view===key?"active":""}" onclick="set({view:'${key}',bellOpen:false})">${icon(key)}<span>${label}</span>${tag?`<em class="nav-tag">${tag}</em>`:""}</button>`;
 }
@@ -97,6 +104,7 @@ function eventDays(texts){
     return m && m[1] === month ? Number(m[2]) : 0;
   }).filter(Boolean);
 }
+// Small month calendar; markDays are the days with events.
 function calendarHtml(markDays){
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
   const offset = (new Date(y, m, 1).getDay() + 6) % 7;            // week starts on Monday
@@ -138,6 +146,7 @@ function donutChart(parts, centerText, centerLabel){
   return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops})"><div><b>${centerText}</b><small>${centerLabel||""}</small></div></div>
     <ul class="legend">${parts.map(p=>`<li><i class="${p.tone}"></i>${p.label}<b>${p.value}</b></li>`).join("")}</ul></div>`;
 }
+// A labeled progress bar.
 function progressBar(label, value, total, tone){
   const pct = total ? Math.round(value/total*100) : 0;
   return `<div class="pbar"><div class="pbar-top"><span>${label}</span><b>${value} / ${total} · ${pct}%</b></div><div class="pbar-track"><i class="${tone||"green"}" style="width:${pct}%"></i></div></div>`;
@@ -152,6 +161,7 @@ function toast(message){
   box.appendChild(el);
   setTimeout(() => { el.classList.add("out"); setTimeout(() => el.remove(), 350); }, 3200);
 }
+// Shows a popup window with the given HTML.
 function openModal(html){
   closeModal();
   const back = document.createElement("div");
@@ -160,6 +170,7 @@ function openModal(html){
   back.innerHTML = `<div class="modal" role="dialog" onclick="event.stopPropagation()"><button class="modal-x" onclick="closeModal()" aria-label="Close">×</button>${html}</div>`;
   document.body.appendChild(back);
 }
+// Closes the popup.
 function closeModal(){ const m = document.getElementById("modal"); if (m) m.remove(); }
 document.addEventListener("keydown", function(e){ if (e.key === "Escape"){ closeModal(); if (state.bellOpen) set({ bellOpen:false }); } });
 
@@ -169,6 +180,7 @@ function searchBox(placeholder){
     <input id="qBox" type="search" autocomplete="off" placeholder="${placeholder}" oninput="runSearch(this.value)" onfocus="runSearch(this.value)">
     <div id="qOut" class="search-out" hidden></div></div>`;
 }
+// Fills the search results while the user types.
 function runSearch(text){
   const out = document.getElementById("qOut");
   const q = text.trim().toLowerCase();
@@ -205,7 +217,9 @@ function samplePolls(){
     { id:3, q:"Add a second coffee-lounge hour in the afternoon?", open:false, closes:"Sep 15, 2026", options:[{t:"Yes",votes:38},{t:"No",votes:6}] }
   ];
 }
+// Total votes of a poll.
 function pollTotal(p){ return p.options.reduce((s,o)=>s+o.votes,0); }
+// Draws the result bars of a poll.
 function pollBars(p, mine){
   const total = pollTotal(p) || 1;
   return p.options.map((o,i)=>{
