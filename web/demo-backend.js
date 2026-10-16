@@ -4,7 +4,7 @@
    and can be reset from the DEMO panel. The sample dates are always built around today.
    Loaded INSTEAD of supabase-js and supabase-config.js. The real system does not use this file. */
 (function () {
-  var KEY = "__rhdemo_v1", SESS = "__rhdemo_session";
+  var KEY = "__rhdemo_v2", SESS = "__rhdemo_session";
   window.RH_SUPABASE = { url: "demo", anonKey: "demo" };
   window.RH_DEMO = true;
 
@@ -28,46 +28,57 @@
 
   function buildSeed() {
     var now = new Date(), YEAR = now.getFullYear(), recs = [], users = [], seq = 0;
+    /* a small fixed random generator, so the sample data looks the same every time */
+    var rs = 20261016;
+    function rnd() { rs = (rs * 1664525 + 1013904223) % 4294967296; return rs / 4294967296; }
+    function ri(a, b) { return a + Math.floor(rnd() * (b - a + 1)); }
+    function pick(a) { return a[Math.floor(rnd() * a.length)]; }
     function R(kind, id, unit, value) { recs.push({ kind: kind, id: String(id), unit: unit, value: value }); }
-    function tid() { return Date.now() - 1000000 + (++seq); }
+    function tid() { return Date.now() - 100000000 + (++seq); }
     var PW = "Demo@1234", verified = new Date(Date.now() - 20 * 86400000).toISOString();
+    function monthDate(off, day) { return new Date(now.getFullYear(), now.getMonth() + off, day, 12); }
 
-    /* units: [label, household, type, status, contact, account name, account email] */
-    var U = [
-      ["Unit 1A", "Santos Family", "Owner", "Occupied", "0917 000 1101", "Elena Santos", "elena.santos"],
-      ["Unit 2B", "Dela Cruz Household", "Owner", "Occupied", "0917 000 1102", "Paolo Dela Cruz", "paolo.delacruz"],
-      ["Unit 3B", "Reyes Household", "Owner", "Occupied", "0917 000 1103", "Maria Reyes", "resident"],
-      ["Unit 5A", "Garcia Family", "Tenant", "Occupied", "0917 000 1104", "Carlo Garcia", "carlo.garcia"],
-      ["Unit 5C", "Mendoza Household", "Owner", "Occupied", "0917 000 1105", "Liza Mendoza", "liza.mendoza"],
-      ["Unit 7C", "Bautista Family", "Owner", "Occupied", "0917 000 1106", "Rico Bautista", "rico.bautista"],
-      ["Unit 8A", "Aquino Household", "Tenant", "Occupied", "0917 000 1107", "Joy Aquino", "joy.aquino"],
-      ["Unit 9B", "Lim Household", "Owner", "Occupied", "0917 000 1108", "Grace Lim", "grace.lim"],
-      ["Unit 10A", "Tan Family", "Owner", "Occupied", "0917 000 1109", "", ""],
-      ["Unit 11C", "Ramos Household", "Owner", "Vacant", "0917 000 1110", "", ""],
-      ["Unit 12A", "Navarro Family", "Owner", "Occupied", "0917 000 1111", "", ""],
-      ["Unit 12B", "Cruz Household", "Owner", "Vacant", "0917 000 1112", "", ""]
-    ];
-    users.push({ id: "demo-admin", email: "admin@demo.test", password: PW, profile: { id: "demo-admin", email: "admin@demo.test", name: "Demo Administrator", role: "admin", unit: null, phone: "0917 000 0000", suspended: false, must_change_password: false, contact_verified_at: verified } });
-    var byUnit = {};
-    U.forEach(function (u, i) {
-      var v = { unit: u[0], name: u[1], type: u[2], status: u[3], contact: u[4], usage: u[2] === "Tenant" ? "tenant" : "owner" };
-      byUnit[u[0]] = v;
-      if (u[5]) {
-        var id = "demo-u" + i, email = u[6].indexOf("@") < 0 ? u[6] + "@demo.test" : u[6];
-        users.push({ id: id, email: email, password: PW, profile: { id: id, email: email, name: u[5], role: "resident", unit: u[0], phone: u[4], suspended: false, must_change_password: false, contact_verified_at: verified } });
-      }
+    /* ---------- units: 12 floors x A, B, C ---------- */
+    var SUR = ["Santos", "Dela Cruz", "Ocampo", "Garcia", "Mendoza", "Torres", "Bautista", "Reyes", "Castillo", "Flores", "Villanueva", "Ramos",
+      "Aquino", "Navarro", "Lim", "Tan", "Chua", "Salazar", "Domingo", "Gonzales", "Aguilar", "Pascual", "Rivera", "Mercado", "Santiago",
+      "Soriano", "Del Rosario", "Valdez", "Manalo", "Lopez", "Fernandez", "Diaz", "Perez", "Cabrera", "Evangelista", "Magsaysay"];
+    var FIRST = ["Elena", "Paolo", "Rhea", "Carlo", "Liza", "Marco", "Rico", "Maria", "Jenny", "Noel", "Cathy", "Dennis", "Joy", "Ben", "Grace",
+      "Victor", "Anna", "Ramon", "Joanna", "Mark", "Teresa", "Leo", "Kristine", "Allan", "Bea", "Jun", "Nina", "Edgar", "Faye", "Rommel",
+      "Lyn", "Gerald", "Trixie", "Albert", "Sheila", "Dante"];
+    var U = [];
+    for (var f = 1; f <= 12; f++) ["A", "B", "C"].forEach(function (L) {
+      var i = U.length;
+      var vacant = i % 9 === 4, tenant = !vacant && i % 5 === 3;
+      U.push({ i: i, label: "Unit " + f + L, house: SUR[i] + (i % 2 ? " Household" : " Family"), type: tenant ? "Tenant" : "Owner",
+        status: vacant ? "Vacant" : "Occupied", contact: "0917 000 " + (1100 + i + 1), person: FIRST[i] + " " + SUR[i], key: i === 7 ? "resident" : (FIRST[i] + "." + SUR[i]).toLowerCase().replace(/[^a-z.]/g, "") });
     });
-    byUnit["Unit 5A"].usageStatus = "approved";
-    byUnit["Unit 5A"].usageInfo = { tname: "Carlo Garcia", tphone: "0917 000 1104", occupants: "3", start: dk(dayOff(-200)), end: dk(dayOff(165)), emerg: "Ana Garcia, 0917 000 2204", plates: "ABC 1234", agree: true };
-    byUnit["Unit 8A"].usage = "tenant"; byUnit["Unit 8A"].usageStatus = "pending";
-    byUnit["Unit 8A"].usageInfo = { tname: "Joy Aquino", tphone: "0917 000 1107", occupants: "2", start: dk(dayOff(5)), end: dk(dayOff(370)), emerg: "Ben Aquino, 0917 000 2207", plates: "", agree: true };
-    byUnit["Unit 9B"].usage = "shortterm"; byUnit["Unit 9B"].usageStatus = "approved";
-    byUnit["Unit 9B"].usageInfo = { platform: "Airbnb", contact: "Grace Lim", phone: "0917 000 1108", maxGuests: "4", start: dk(dayOff(-120)), listing: "Cozy studio near the park", agree: true };
-    byUnit["Unit 12A"].usage = "renovation"; byUnit["Unit 12A"].usageStatus = "pending";
-    byUnit["Unit 12A"].usageInfo = { work: "New tiles in the kitchen and bathroom", contractor: "J. Villanueva Builders", phone: "0917 000 3312", start: dk(dayOff(8)), end: dk(dayOff(30)), agree: true };
-    U.forEach(function (u) { R("unit", u[0], u[0], byUnit[u[0]]); });
+    var occ = U.filter(function (u) { return u.status === "Occupied"; });
+    var withAcc = occ.slice(0, 24);
+    users.push({ id: "demo-admin", email: "admin@demo.test", password: PW, profile: { id: "demo-admin", email: "admin@demo.test", name: "Demo Administrator", role: "admin", unit: null, phone: "0917 000 0000", suspended: false, must_change_password: false, contact_verified_at: verified } });
+    withAcc.forEach(function (u) {
+      var id = "demo-u" + u.i, email = u.key + "@demo.test";
+      users.push({ id: id, email: email, password: PW, profile: { id: id, email: email, name: u.person, role: "resident", unit: u.label, phone: u.contact, suspended: false, must_change_password: false, contact_verified_at: verified } });
+    });
+    var byUnit = {};
+    U.forEach(function (u) { byUnit[u.label] = { unit: u.label, name: u.house, type: u.type, status: u.status, contact: u.contact, usage: u.type === "Tenant" ? "tenant" : "owner" }; });
+    function tenantInfo(u, from, to) { return { tname: u.person, tphone: u.contact, occupants: String(ri(1, 4)), start: dk(dayOff(from)), end: dk(dayOff(to)), emerg: pick(FIRST) + " " + u.house.split(" ")[0] + ", 0917 000 " + ri(2000, 2999), plates: "ABC " + ri(1000, 9999), agree: true }; }
+    var tenants = U.filter(function (u) { return u.type === "Tenant" && u.status === "Occupied"; });
+    tenants.forEach(function (u, k) {
+      var b = byUnit[u.label];
+      if (k === 1) { b.usageStatus = "pending"; b.usageInfo = tenantInfo(u, 5, 370); }
+      else if (k === 4) { b.usageStatus = "rejected"; b.usageRemark = "The lease dates are missing. Please send the signed lease to the office."; b.usageInfo = tenantInfo(u, -3, 360); }
+      else { b.usageStatus = "approved"; b.usageInfo = tenantInfo(u, -ri(60, 300), ri(60, 300)); }
+    });
+    [[9, "shortterm"], [20, "shortterm"], [11, "business"], [14, "renovation"], [25, "renovation"], [16, "business"]].forEach(function (x, k) {
+      var u = U[x[0]]; if (u.status !== "Occupied") return;
+      var b = byUnit[u.label]; b.usage = x[1]; b.usageStatus = (k === 3 || k === 5) ? "pending" : "approved";
+      if (x[1] === "shortterm") b.usageInfo = { platform: pick(["Airbnb", "Booking.com", "Agoda"]), contact: u.person, phone: u.contact, maxGuests: String(ri(2, 5)), start: dk(dayOff(-ri(30, 200))), listing: "Cozy unit with city view", agree: true };
+      else if (x[1] === "business") b.usageInfo = { bname: u.person.split(" ")[1] + " Online Shop", btype: pick(["Online selling", "Tutoring", "Home office", "Baking"]), permit: "DTI-" + ri(100000, 999999), hours: "Mon to Fri, 9 AM to 5 PM", visitors: String(ri(1, 6)), phone: u.contact, agree: true };
+      else b.usageInfo = { work: pick(["New tiles in the kitchen and bathroom", "Repainting and new ceiling", "New cabinets and countertop"]), contractor: pick(["J. Villanueva Builders", "Metro Renovations", "Santos Interiors"]), phone: "0917 000 " + ri(3000, 3999), start: dk(dayOff(ri(3, 12))), end: dk(dayOff(ri(20, 45))), agree: true };
+    });
+    U.forEach(function (u) { R("unit", u.label, u.label, byUnit[u.label]); });
 
-    /* settings */
+    /* ---------- settings ---------- */
     R("setting", "dues_rate", "", { rate: 2500 });
     R("setting", "motor_rate", "", { rate: 1500 });
     R("setting", "motor_rate_daily", "", { rate: 100 });
@@ -89,119 +100,160 @@
         { name: "Security desk", note: "Open 24 hours", tel: "Local 101" },
         { name: "Administration office", note: "Mon to Sat, 8 AM to 5 PM", tel: "Local 110" },
         { name: "Building engineer", note: "Repairs and maintenance", tel: "Local 120" },
+        { name: "Housekeeping", note: "Common areas and garbage", tel: "Local 130" },
+        { name: "Parking office", note: "Motor parking rentals", tel: "Local 140" },
         { name: "Emergency hotline", note: "Fire, medical, police", tel: "911" }
       ],
       rules: [
         ["Quiet hours", "Please keep noise down from 10 PM to 6 AM."],
         ["Garbage", "Bag your garbage and put it in the chute room on your floor. No bulky items."],
         ["Visitors", "Visitors must register at the lobby and leave a valid ID."],
-        ["Pets", "Pets must be on a leash in the common areas."]
+        ["Pets", "Pets must be on a leash in the common areas."],
+        ["Moving in or out", "Tell the office three days before and use the service elevator."],
+        ["Smoking", "No smoking in the lobby, hallways, elevators and amenities."]
       ] });
 
-    /* dues and payments: 2 months paid, this month open */
-    var receipt = 0, houses = U.filter(function (u) { return u[3] === "Occupied"; });
-    function dueDate(off) { return new Date(now.getFullYear(), now.getMonth() + off, 25, 12); }
-    houses.forEach(function (u) {
+    /* ---------- dues and payments: two months back (mostly paid) and this month ---------- */
+    var receipt = 0, METHODS = ["Cash or check at the office", "GCash", "Bank transfer"];
+    occ.forEach(function (u, hi) {
       [-2, -1, 0].forEach(function (off) {
-        var dd = dueDate(off), note = "Association dues - " + MONL[dd.getMonth()] + " " + dd.getFullYear();
-        var idn = new Date(dd.getFullYear(), dd.getMonth(), 1, 9).getTime() + houses.indexOf(u);
-        /* last two months are paid (except Unit 5A's, which is overdue); a few units have already paid this month */
-        var paid = (off < 0 && !(u[0] === "Unit 5A" && off === -1)) || (off === 0 && ["Unit 1A", "Unit 2B", "Unit 5C", "Unit 9B", "Unit 10A"].indexOf(u[0]) >= 0);
-        var due = { id: idn, unit: u[0], name: u[1], amount: 2500, note: note, dueDate: sd(dd) };
+        var dd = monthDate(off, 25), note = "Association dues - " + MONL[dd.getMonth()] + " " + dd.getFullYear();
+        var idn = new Date(dd.getFullYear(), dd.getMonth(), 1, 9).getTime() + hi;
+        var paid = off < 0 ? !(off === -1 && hi % 9 === 3) && !(off === -2 && hi % 23 === 5) : (hi % 5 === 0 || hi % 5 === 2);
+        var due = { id: idn, unit: u.label, name: u.house, amount: 2500, note: note, dueDate: sd(dd) };
         if (paid) due.paid = true;
-        R("due", idn, u[0], due);
+        R("due", idn, u.label, due);
         if (paid) {
-          var pd = new Date(dd.getFullYear(), dd.getMonth(), 8 + (houses.indexOf(u) * 2) % 15, 12);
-          if (pd > now) pd = new Date(now.getFullYear(), now.getMonth(), Math.max(1, now.getDate() - houses.indexOf(u)), 12);
+          var pd = monthDate(off, 3 + (hi * 3 + off * 5 + 40) % 17);
+          if (pd > now) pd = new Date(now.getFullYear(), now.getMonth(), Math.max(1, now.getDate() - (hi % 10)), 12);
           var no = "OR-" + YEAR + "-" + String(++receipt).padStart(4, "0");
-          var method = ["Cash or check at the office", "GCash", "Bank transfer"][(houses.indexOf(u) + off + 2) % 3];
-          var ref = method === "Cash or check at the office" ? "—" : "REF" + (700000 + receipt * 37);
-          R("payment", idn + 5, u[0], { id: idn + 5, receiptNo: no, unit: u[0], payer: u[1], forText: note, method: method, reference: ref, date: sd(pd), amount: 2500 });
-          R("proof", idn + 7, u[0], { id: idn + 7, unit: u[0], payer: u[1], forText: note, method: method, reference: ref, amount: 2500, date: sd(pd), status: "Confirmed", receiptNo: no, confirmedOn: sd(pd) });
+          var method = METHODS[(hi + off + 2) % 3];
+          var ref = method === METHODS[0] ? "—" : "REF" + (700000 + receipt * 37);
+          R("payment", idn + 5000, u.label, { id: idn + 5000, receiptNo: no, unit: u.label, payer: u.house, forText: note, method: method, reference: ref, date: sd(pd), amount: 2500 });
+          R("proof", idn + 7000, u.label, { id: idn + 7000, unit: u.label, payer: u.house, forText: note, method: method, reference: ref, amount: 2500, date: sd(pd), status: "Confirmed", receiptNo: no, confirmedOn: sd(pd) });
+        } else if (off === 0 && hi % 7 === 1) {
+          R("proof", idn + 7000, u.label, { id: idn + 7000, unit: u.label, payer: u.house, forText: note, method: "GCash", reference: "GC" + (YEAR * 1000000 + 101400 + hi), amount: 2500, date: sd(dayOff(-(hi % 3))), status: "Pending" });
         }
       });
+      if (hi % 6 === 0) {
+        var xid = tid();
+        R("due", xid, u.label, { id: xid, unit: u.label, name: u.house, amount: 300, note: "Parking sticker fee", dueDate: sd(dayOff(5 + hi % 6)) });
+      }
     });
-    /* Maria (Unit 3B, the resident demo) also has a special charge, and Unit 12A has paid this month and is waiting for the office */
     var sid = tid();
-    R("due", sid, "Unit 3B", { id: sid, unit: "Unit 3B", name: "Reyes Household", amount: 800, note: "Special assessment - elevator repair", dueDate: sd(dayOff(9)) });
-    var cur12 = houses.filter(function (u) { return u[0] === "Unit 12A"; })[0], dd0 = dueDate(0), note0 = "Association dues - " + MONL[dd0.getMonth()] + " " + dd0.getFullYear();
-    var pid = tid();
-    R("proof", pid, "Unit 12A", { id: pid, unit: "Unit 12A", payer: cur12[1], forText: note0, method: "GCash", reference: "GC" + (YEAR * 1000000 + 101401), amount: 2500, date: sd(dayOff(-1)), status: "Pending" });
+    R("due", sid, "Unit 3B", { id: sid, unit: "Unit 3B", name: byUnit["Unit 3B"].name, amount: 800, note: "Special assessment - elevator repair", dueDate: sd(dayOff(9)) });
 
-    /* expenses (admin only) */
-    var EXP = [
-      ["Security guards - monthly contract", "Security services", "Whole building", "SafeGuard Agency (sample)", 1, 38000, -3],
-      ["Common-area electricity", "Common-area utilities", "Lobby and common areas", "Sample Power Co.", 1, 21450.5, -5],
-      ["Water bill (common areas and pool)", "Common-area utilities", "Swimming pool", "Sample Water District", 1, 8920, -6],
-      ["Janitorial supplies", "Janitorial and maintenance", "Whole building", "CleanPro Supplies", 12, 310, -9],
-      ["Elevator B servicing", "Repairs and improvements", "Elevators", "LiftCare Services", 1, 15500, -14],
-      ["Light bulbs for hallways", "Supplies and equipment", "Lobby and common areas", "Hardware Depot", 24, 85.5, -18],
-      ["Pool chemicals", "Supplies and equipment", "Swimming pool", "AquaPure Trading", 6, 640, -25],
-      ["Building insurance (quarterly)", "Insurance", "Whole building", "Sample Insurance", 1, 27500, -33],
-      ["Security guards - monthly contract", "Security services", "Whole building", "SafeGuard Agency (sample)", 1, 38000, -33],
-      ["Parking lot repainting", "Repairs and improvements", "Parking", "ColorWorks Painting", 1, 12400, -47],
-      ["Reserve fund deposit", "Administration and reserve fund", "Whole building", "Bank deposit", 1, 20000, -62]
-    ];
-    EXP.forEach(function (e, i) {
-      var id = tid();
-      R("expense", id, "__admin", { id: id, item: e[0], category: e[1], area: e[2], payee: e[3], receiptNo: "R-" + (4100 + i * 7), qty: e[4], unitPrice: e[5], date: dk(dayOff(e[6])) });
-    });
+    /* ---------- expenses (administrator only), six months ---------- */
+    var rc = 4100;
+    function exp(item, cat, area, payee, qty, price, off, day) {
+      var d = monthDate(off, day); if (d > now) return;
+      var id = tid(); rc += 7;
+      R("expense", id, "__admin", { id: id, item: item, category: cat, area: area, payee: payee, receiptNo: "R-" + rc, qty: qty, unitPrice: price, date: dk(d) });
+    }
+    for (var m = 0; m >= -5; m--) {
+      exp("Security guards - monthly contract", "Security services", "Whole building", "SafeGuard Agency (sample)", 1, 38000, m, 3);
+      exp("Common-area electricity", "Common-area utilities", "Lobby and common areas", "Sample Power Co.", 1, 19000 + ri(0, 5000) + 0.5, m, 6);
+      exp("Water bill (common areas and pool)", "Common-area utilities", "Swimming pool", "Sample Water District", 1, 7500 + ri(0, 2000), m, 8);
+      exp("Janitorial supplies", "Janitorial and maintenance", "Whole building", "CleanPro Supplies", ri(8, 14), 310, m, 11);
+      exp("Garbage hauling", "Janitorial and maintenance", "Whole building", "GreenCity Hauling", 1, 4500, m, 14);
+      exp("Pool chemicals", "Supplies and equipment", "Swimming pool", "AquaPure Trading", ri(4, 7), 640, m, 17);
+      exp("Reserve fund deposit", "Administration and reserve fund", "Whole building", "Bank deposit", 1, 20000, m, 26);
+      if (m % 3 === 0) {
+        exp("Elevator servicing", "Repairs and improvements", "Elevators", "LiftCare Services", 1, 15500, m, 19);
+        exp("Pest control (quarterly)", "Janitorial and maintenance", "Whole building", "BugAway Services", 1, 9800, m, 21);
+        exp("Building insurance (quarterly)", "Insurance", "Whole building", "Sample Insurance", 1, 27500, m, 23);
+      }
+      if (m % 2 === 0) exp("CCTV maintenance", "Repairs and improvements", "Whole building", "SecureView Tech", 1, 6200, m, 22);
+    }
+    exp("Parking lot repainting", "Repairs and improvements", "Parking", "ColorWorks Painting", 1, 12400, -2, 12);
+    exp("Light bulbs for hallways", "Supplies and equipment", "Lobby and common areas", "Hardware Depot", 24, 85.5, -1, 9);
+    exp("Lobby plants and landscaping", "Janitorial and maintenance", "Lobby and common areas", "Green Thumb Landscaping", 1, 5400, -1, 18);
 
-    /* announcements, events, polls */
+    /* ---------- announcements, events, polls ---------- */
     function ann(title, body, type, off, status) { var id = tid(); R("announcement", id, "", { id: id, title: title, body: body, date: sd(dayOff(off)), status: status || "Published", type: type }); }
     ann("Water interruption this Saturday", "The water supply will be shut off from 9 AM to 3 PM for the cleaning of the water tank. Please store enough water.", "Maintenance", -1);
     ann("Elevator B maintenance", "Elevator B will be out of service next Tuesday from 8 AM to 12 NN. Please use Elevator A.", "Maintenance", -3);
     ann("Reminder: dues are due on the 25th", "Association dues are due every 25th of the month. Pay online in the Dues page or at the office.", "General", -4);
     ann("Fire drill next week", "A building-wide fire drill will be held next Thursday at 2 PM. Please follow the guards' instructions.", "Warning", -6);
     ann("Halloween trick-or-treat in the lobby", "Kids are welcome to trick-or-treat on October 31 from 4 to 6 PM. Costumes encouraged!", "General", -8);
+    ann("Pest control schedule", "Pest control will visit the floors on Wednesday from 9 AM. Please let the staff in or tell the office if you prefer another day.", "Maintenance", -10);
+    ann("New rule: parking stickers", "All motor parking users must display the new sticker. Get yours at the office for ₱300.", "General", -13);
+    ann("Typhoon advisory", "Please keep windows closed and move plants indoors. The guards will lock the pool and the gym when the signal is raised.", "Emergency", -16);
+    ann("Lost and found at the lobby", "A set of keys and a blue umbrella were found near the elevator. Claim them at the guard desk.", "General", -20);
+    ann("Thank you for the clean-up drive", "Thank you to everyone who joined last month's clean-up. The lobby planters are now back.", "General", -27);
     ann("Year-end party planning", "Draft: we are collecting ideas for the year-end party. Details to follow.", "General", -1, "Draft");
     function evt(title, off, time, place, about) { var id = tid(); R("event", id, "", { id: id, title: title, date: sd(dayOff(off)) + " · " + time, place: place, about: about }); return id; }
-    var e1 = evt("Community clean-up drive", 8, "7:00 AM", "Lobby", "Bring gloves and a reusable bag. Snacks provided.");
-    var e2 = evt("Kids Halloween party", 15, "4:00 PM", "Function Hall", "Games, costumes and treats for the kids of the building.");
-    var e3 = evt("Quarterly general assembly", 25, "6:00 PM", "Function Hall", "Updates on the budget and the lobby repainting.");
-    [["Unit 1A", e1], ["Unit 3B", e2], ["Unit 5C", e1], ["Unit 7C", e2], ["Unit 9B", e2], ["Unit 3B", e1]].forEach(function (x) { R("rsvp", x[0] + "|" + x[1], x[0], { event: x[1] }); });
-    var p1 = tid(), p2 = tid();
-    R("poll", p1, "", { id: p1, question: "Should the lobby be repainted this year?", open: true, closes: sd(dayOff(6)), options: ["Yes, with a new color", "Yes, same color", "No, not needed"] });
-    R("poll", p2, "", { id: p2, question: "Best day for the quarterly general assembly?", open: false, closes: sd(dayOff(-12)), options: ["Saturday morning", "Saturday evening", "Sunday afternoon"] });
-    [["Unit 1A", 0], ["Unit 2B", 1], ["Unit 5A", 0], ["Unit 5C", 0], ["Unit 7C", 2], ["Unit 9B", 1]].forEach(function (x) { R("vote", x[0] + "|" + p1, x[0], { poll: p1, option: x[1] }); });
-    [["Unit 1A", 1], ["Unit 2B", 1], ["Unit 3B", 0], ["Unit 5C", 1], ["Unit 7C", 2], ["Unit 8A", 1], ["Unit 9B", 0]].forEach(function (x) { R("vote", x[0] + "|" + p2, x[0], { poll: p2, option: x[1] }); });
-
-    /* bookings (day index: today = 0) */
-    var BK = [
-      ["Unit 3B", 0, 2, 6, "Approved"], ["Unit 3B", 1, 0, 3, "Pending"], ["Unit 1A", 0, 0, 7, "Approved"], ["Unit 2B", 0, 1, 2, "Pending"],
-      ["Unit 5C", 1, 4, 0, "Approved"], ["Unit 7C", 2, 1, 3, "Pending"], ["Unit 9B", 0, 3, 1, "Denied"], ["Unit 10A", 3, 2, 4, "Approved"],
-      ["Unit 1A", 0, 0, -3, "Approved"], ["Unit 5A", 2, 1, -2, "Approved"], ["Unit 3B", 0, 4, -6, "Approved"], ["Unit 7C", 3, 3, 5, "Pending"],
-      ["Unit 2B", 2, 5, 9, "Approved"], ["Unit 8A", 0, 3, 12, "Pending"]
+    var EV = [
+      evt("Community clean-up drive", 8, "7:00 AM", "Lobby", "Bring gloves and a reusable bag. Snacks provided."),
+      evt("Kids Halloween party", 15, "4:00 PM", "Function Hall", "Games, costumes and treats for the kids of the building."),
+      evt("Quarterly general assembly", 25, "6:00 PM", "Function Hall", "Updates on the budget and the lobby repainting."),
+      evt("Morning yoga by the pool", 4, "6:30 AM", "Pool deck", "Bring your own mat. Free for residents."),
+      evt("Blood donation drive", 11, "9:00 AM", "Function Hall", "In partnership with the barangay health center."),
+      evt("Christmas lights switch-on", 40, "6:00 PM", "Lobby", "Hot chocolate and carols for the whole building.")
     ];
-    BK.forEach(function (b) {
-      var a = AM[b[1]], d = dayOff(b[3]), id = tid();
-      R("booking", id, b[0], { id: id, who: byUnit[b[0]].name, unit: b[0], place: a.name, when: sd(d) + ", " + slotLabel(toMin(a.open), a.mins, b[2]), status: b[4], day: dk(d), slot: b[2] });
+    EV.forEach(function (eid) { withAcc.forEach(function (u) { if (rnd() < 0.35) R("rsvp", u.label + "|" + eid, u.label, { event: eid }); }); });
+    R("rsvp", "Unit 3B|" + EV[1], "Unit 3B", { event: EV[1] });
+    R("rsvp", "Unit 3B|" + EV[0], "Unit 3B", { event: EV[0] });
+    var POLLS = [
+      ["Should the lobby be repainted this year?", true, 6, ["Yes, with a new color", "Yes, same color", "No, not needed"]],
+      ["Best day for the quarterly general assembly?", false, -12, ["Saturday morning", "Saturday evening", "Sunday afternoon"]],
+      ["Add more CCTV cameras in the parking area?", true, 10, ["Yes", "No", "Not sure"]],
+      ["How big should the Christmas party budget be?", true, 14, ["₱20,000", "₱35,000", "₱50,000"]]
+    ];
+    POLLS.forEach(function (p) {
+      var id = tid(); R("poll", id, "", { id: id, question: p[0], open: p[1], closes: sd(dayOff(p[2])), options: p[3] });
+      withAcc.forEach(function (u) { if (u.label !== "Unit 3B" || p[0].indexOf("Best day") === 0) { if (rnd() < 0.65) R("vote", u.label + "|" + id, u.label, { poll: id, option: Math.floor(rnd() * p[3].length) }); } });
     });
+
+    /* ---------- bookings ---------- */
     function toMin(t) { var m = /^(\d{1,2}):(\d{2})$/.exec(t); return Number(m[1]) * 60 + Number(m[2]); }
+    function slotCount(a) { return Math.floor((toMin(a.close) - toMin(a.open)) / a.mins); }
+    var used = {};
+    function book(unitLabel, ai, si, off, status) {
+      var a = AM[ai], d = dayOff(off), key = ai + "|" + dk(d) + "|" + si;
+      if (used[key]) return false; used[key] = 1;
+      var id = tid();
+      R("booking", id, unitLabel, { id: id, who: byUnit[unitLabel].name, unit: unitLabel, place: a.name, when: sd(d) + ", " + slotLabel(toMin(a.open), a.mins, si), status: status, day: dk(d), slot: si });
+      return true;
+    }
+    book("Unit 3B", 0, 2, 6, "Approved"); book("Unit 3B", 1, 0, 3, "Pending"); book("Unit 3B", 0, 4, -6, "Approved");
+    var n = 0, guard = 0;
+    while (n < 52 && guard++ < 600) {
+      var u = pick(withAcc), off = ri(-12, 14), ai = Math.floor(rnd() * 4), si = Math.floor(rnd() * slotCount(AM[ai])), status;
+      var x = rnd();
+      status = off < 0 ? (x < 0.85 ? "Approved" : "Denied") : (x < 0.55 ? "Approved" : x < 0.88 ? "Pending" : "Denied");
+      if (book(u.label, ai, si, off, status)) n++;
+    }
 
-    /* grievances: stage 0 open, 1 in progress, 2 resolved */
-    [["Unit 3B", "Leaking pipe in the 3rd floor hallway", "Water drips from the ceiling near the elevator.", 1], ["Unit 3B", "Broken hallway light", "The light outside Unit 3B keeps flickering.", 2],
-     ["Unit 5C", "Noise from a late-night gathering", "Loud music past midnight on the weekend.", 0], ["Unit 7C", "Parking gate sensor not working", "The gate sometimes does not open for residents.", 1],
-     ["Unit 9B", "Treadmill in the gym is broken", "The second treadmill stops after a few minutes.", 0]].forEach(function (g, i) {
-      var id = tid() - i * 86400000;
-      R("grievance", id, g[0], { id: id, title: g[1], body: g[2], by: g[0], stage: g[3] });
+    /* ---------- grievances: stage 0 open, 1 in progress, 2 resolved ---------- */
+    var GR = [
+      ["Leaking pipe in the hallway", "Water drips from the ceiling near the elevator."], ["Broken hallway light", "The light outside the unit keeps flickering."],
+      ["Noise from a late-night gathering", "Loud music past midnight on the weekend."], ["Parking gate sensor not working", "The gate sometimes does not open for residents."],
+      ["Treadmill in the gym is broken", "The second treadmill stops after a few minutes."], ["Elevator A makes a grinding sound", "A loud noise between the 7th and 8th floor."],
+      ["Garbage left in the hallway", "Bags were left outside the chute room again."], ["Pool tiles are slippery", "The shallow end is slippery in the morning."],
+      ["No hot water in the gym shower", "Cold water only since Monday."], ["Intercom not working", "The lobby intercom does not ring in the unit."],
+      ["Water pressure is low", "Very weak water pressure in the evening."], ["Smoking in the stairwell", "A smell of cigarette smoke on the 5th floor stairs."],
+      ["Stray cat in the parking area", "A cat is trapped near the motor parking."], ["Lobby aircon too cold", "The lobby aircon is set too low in the morning."]
+    ];
+    GR.forEach(function (g, i) {
+      var id = tid() - i * 86400000 * 1.5, u = i < 2 ? U[7] : pick(withAcc), st = i < 2 ? (i === 0 ? 1 : 2) : (rnd() < 0.35 ? 0 : rnd() < 0.5 ? 1 : 2);
+      R("grievance", Math.round(id), u.label, { id: Math.round(id), title: g[0], body: g[1], by: u.label, stage: st });
     });
 
-    /* motor parking */
-    for (var i = 1; i <= 12; i++) R("slot", "M-" + pad(i), "", { id: "M-" + pad(i) });
-    function rent(id, unit, plan, off, days, amt) {
-      var from = dayOff(off), until = dayOff(off + days - 1);
-      R("slot", id, "", { id: id, unit: unit, plan: plan, from: dk(from), until: dk(until), amount: amt });
-    }
-    recs = recs.filter(function (r) { return !(r.kind === "slot" && ["M-02", "M-04", "M-08"].indexOf(r.id) >= 0); });
-    rent("M-02", "Unit 1A", "month", -10, 30, 1500);
-    rent("M-04", "Unit 9B", "day", -1, 4, 400);
-    rent("M-08", "Unit 2B", "month", -20, 30, 1500);
-    var rqAt = Date.now() - 3600000, rpid = tid();
-    R("request", "Unit 7C", "Unit 7C", { unit: "Unit 7C", who: "Bautista Family", when: "1 hour ago", at: rqAt, slot: "M-05", plan: "month", days: 1, amount: 1500, confirmed: false });
-    R("proof", rpid, "Unit 7C", { id: rpid, unit: "Unit 7C", payer: "Bautista Family", forText: "Motor parking rental", method: "GCash", reference: "GC" + (YEAR * 1000000 + 101403), amount: 1500, date: sd(now), status: "Pending", slot: "M-05" });
+    /* ---------- motor parking: 20 slots ---------- */
+    var rentedSlots = {};
+    function rent(id, unit, plan, off, days, amt) { rentedSlots[id] = 1; R("slot", id, "", { id: id, unit: unit, plan: plan, from: dk(dayOff(off)), until: dk(dayOff(off + days - 1)), amount: amt }); }
+    rent("M-02", "Unit 1A", "month", -10, 30, 1500); rent("M-04", "Unit 9B", "day", -1, 4, 400); rent("M-08", "Unit 2B", "month", -20, 30, 1500);
+    rent("M-09", "Unit 2A", "month", -5, 30, 1500); rent("M-11", "Unit 3A", "day", 0, 7, 700); rent("M-13", "Unit 4A", "month", -26, 30, 1500);
+    rent("M-15", "Unit 6C", "month", -3, 30, 1500); rent("M-16", "Unit 8B", "day", -2, 3, 300); rent("M-18", "Unit 10A", "month", -15, 30, 1500);
+    for (var s = 1; s <= 20; s++) { var sid2 = "M-" + pad(s); if (!rentedSlots[sid2]) R("slot", sid2, "", { id: sid2 }); }
+    [["Unit 7A", "M-05", 1], ["Unit 5C", "M-06", 2]].forEach(function (q, k) {
+      var u = byUnit[q[0]], rpid = tid();
+      R("request", q[0], q[0], { unit: q[0], who: u.name, when: k ? "3 hours ago" : "1 hour ago", at: Date.now() - (k ? 10800000 : 3600000), slot: q[1], plan: "month", days: 1, amount: 1500, confirmed: false });
+      if (!k) R("proof", rpid, q[0], { id: rpid, unit: q[0], payer: u.name, forText: "Motor parking rental", method: "GCash", reference: "GC" + (YEAR * 1000000 + 101403), amount: 1500, date: sd(now), status: "Pending", slot: q[1] });
+    });
 
-    /* documents (readable inside the page) */
+    /* ---------- documents (readable inside the page) ---------- */
     function doc(name, cat, aud, blocks, off) {
       var id = tid();
       R("doc", id, aud === "admin" ? "__admin" : "", { id: id, name: name, cat: cat, date: sd(dayOff(off)), audience: aud, ext: "", blocks: blocks });
@@ -214,15 +266,20 @@
       { k: "table", r: [["Item", "Amount"], ["Dues collected", "₱ 240,000"], ["Operating expenses", "₱ 168,000"], ["Reserve fund", "₱ 72,000"]] }], -20);
     doc("Move-in and move-out form", "Form", "all", [{ k: "h1", t: "Move-in / move-out form (sample)" }, { k: "p", t: "Fill this in and submit it to the office three days before moving." }], -90);
     doc("Minutes of the last general assembly", "Minutes", "all", [{ k: "h1", t: "Minutes (sample)" }, { k: "bullet", t: "The budget was approved." }, { k: "bullet", t: "The lobby repainting will be put to a vote." }], -45);
+    doc("Parking policy", "Policy", "all", [{ k: "h1", t: "Motor parking policy (sample)" }, { k: "bullet", t: "Monthly rental is ₱1,500; daily rental is ₱100 per day." }, { k: "bullet", t: "Display the sticker at all times." }], -30);
+    doc("Amenity guidelines", "Policy", "all", [{ k: "h1", t: "Amenity guidelines (sample)" }, { k: "p", t: "Bookings are in two-hour times and need the office's approval." }, { k: "bullet", t: "Pool: 6 AM to 8 PM." }, { k: "bullet", t: "Function hall: 8 AM to 10 PM." }], -75);
+    doc("Notice: elevator schedule", "Notice", "all", [{ k: "h1", t: "Elevator maintenance schedule (sample)" }, { k: "p", t: "Elevator B will be serviced every first Tuesday of the month." }], -3);
     doc("Board notes (admin only)", "Other", "admin", [{ k: "h1", t: "Board notes (sample)" }, { k: "p", t: "Only the administrator can see this document." }], -5);
 
-    /* activity log (admin) */
-    [["Payment recorded, Unit 1A", "Finance", 0.2], ["Booking approved, Unit 1A", "Facilities", 0.4], ["Announcement published: Water interruption this Saturday", "Announcements", 1.1],
-     ["Expense added: Security guards - monthly contract", "Expenses", 2.2], ["Grievance in progress: Leaking pipe in the 3rd floor hallway", "Requests", 2.6], ["Unit usage declaration received, Unit 8A", "Units", 3],
-     ["Event added: Community clean-up drive", "Events", 3.4], ["Poll created: Should the lobby be repainted this year?", "Polls", 4.1], ["Charge posted to every occupied unit: October dues", "Finance", 5.2],
-     ["Parking rented: M-02 to Unit 1A", "Parking", 6.3], ["Amenity updated: Gym", "Facilities", 7.2], ["Account created for Unit 9B", "Access", 9.5]].forEach(function (a) {
-      var at = Date.now() - Math.round(a[2] * 86400000);
-      R("activity", at, "__admin", { title: a[0], area: a[1], at: at });
+    /* ---------- activity log (administrator) ---------- */
+    var ACT = [["Payment recorded, ", "Finance"], ["Booking approved, ", "Facilities"], ["Booking denied, ", "Facilities"], ["Account created for ", "Access"], ["Unit usage declaration received, ", "Units"], ["Grievance in progress: ", "Requests"], ["Parking rented to ", "Parking"]];
+    var TITLES = ["Announcement published: Water interruption this Saturday", "Expense added: Security guards - monthly contract", "Event added: Community clean-up drive", "Poll created: Should the lobby be repainted this year?", "Charge posted to every occupied unit: October dues", "Amenity updated: Gym", "Document uploaded: Parking policy", "Settings updated: payment methods"];
+    var acts = [];
+    for (var a = 0; a < 40; a++) { var t = pick(ACT), au = pick(withAcc); acts.push([t[0] + au.label, t[1], a * 0.35 + rnd() * 0.3]); }
+    TITLES.forEach(function (ttl, k) { acts.push([ttl, ttl.split(" ")[0] === "Announcement" ? "Announcements" : ttl.split(" ")[0] === "Expense" ? "Expenses" : ttl.split(" ")[0] === "Event" ? "Events" : ttl.split(" ")[0] === "Poll" ? "Polls" : ttl.split(" ")[0] === "Charge" ? "Finance" : ttl.split(" ")[0] === "Amenity" ? "Facilities" : ttl.split(" ")[0] === "Document" ? "Documents" : "Settings", 1 + k * 1.6]); });
+    acts.forEach(function (x) {
+      var at = Date.now() - Math.round(x[2] * 86400000) - ri(0, 3600000);
+      R("activity", at, "__admin", { title: x[0], area: x[1], at: at });
     });
     return { seedDay: dk(now), users: users, records: recs, seq: 0 };
   }
