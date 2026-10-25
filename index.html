@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex">
-<title>ResidentHub Demo — sample data only</title>
+<title>ResidentHub Demo — Facility Management System for City Residences Condominium</title>
 <link rel="icon" href="web/logo.jpg">
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
@@ -37,13 +37,26 @@ a.back{color:var(--blue);font-weight:600;text-decoration:none;font-size:14px}
 <main>
   <div class="top"><img src="web/logo.jpg" alt=""><div><b>ResidentHub</b><span>City Residences Condominium Corporation</span></div></div>
   <span class="badge">DEMO · SAMPLE DATA ONLY</span>
-  <h1>Try ResidentHub without signing up</h1>
-  <p class="lead">This is a preview of the whole system with made-up people, units, dues and bookings. It is not connected to the real database, so you can click around freely.</p>
+  <h1>ResidentHub: Facility Management System for City Residences Condominium</h1>
+  <p class="lead">Try it without signing up. This is a preview of the whole system with made-up people, units, dues and bookings. It is not connected to the real database, so you can click around freely.</p>
 
   <div class="grid">
     <div class="card"><h2>Administrator dashboard</h2><p>Units, finance and payments, facility bookings, parking, announcements, polls, expenses, reports and the activity log.</p><a class="btn" href="web/admin.html?as=admin">Open the admin demo</a></div>
     <div class="card"><h2>Resident dashboard</h2><p>Signed in as <b>Maria Reyes, Unit 3B</b>: book a facility, pay dues, join events, vote in polls and send a grievance.</p><a class="btn" href="web/resident.html?as=resident">Open the resident demo</a></div>
     <div class="card"><h2>Mobile app</h2><p>The ResidentHub app (web version) with the same kind of sample data. Pick Admin or Resident on its sign-in screen.</p><a class="btn" href="app/">Open the app demo</a></div>
+  </div>
+
+    <div class="note" style="margin-top:22px;border-style:solid">
+    <b>Title defense walkthrough</b> (about 5 minutes). Open the resident demo and the admin demo in two tabs; they update each other.
+    <ol style="margin:10px 0 0 18px;padding:0;line-height:1.7">
+      <li><b>Resident, Book a facility:</b> pick a date on the calendar, pick a time, send the request. It shows as <i>Pending</i>.</li>
+      <li><b>Admin, Facility:</b> approve the request. The resident sees <i>Approved</i> under Reservations.</li>
+      <li><b>Resident, Dues:</b> choose a charge, pick how you paid, type any reference number and send the payment details.</li>
+      <li><b>Admin, Finance:</b> find the payment from Unit 3B under <i>Payments to verify</i> and confirm it. A receipt number is issued and the due shows as paid.</li>
+      <li><b>Resident, Parking:</b> pick a free slot, choose a monthly or daily rental and pay it. The admin confirms that payment under Finance and the slot is assigned.</li>
+      <li><b>Admin, Announcements and Polls:</b> post one. The resident reads it and votes.</li>
+      <li><b>Admin, Reports and Activity log:</b> everything that was just done is recorded.</li>
+    </ol>
   </div>
 
   <div class="note"><b>How the demo works.</b> Nothing is sent to a server. Your clicks are saved in your own browser only, so the admin and resident demos can be open in two tabs and will update each other. Use the yellow <b>DEMO</b> button at the bottom-left of the dashboards to reset the sample data.<br>
