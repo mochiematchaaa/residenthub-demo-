@@ -464,6 +464,8 @@
       var overdue = ts.filter(function (r) { return daysTo(r.v.due) < 0; }).length, soon = dueCount() - overdue;
       var bad = equipList().filter(function (e) { return e.v.status !== "Working"; }).length;
       var card = summaryCard("yellow", "Maintenance", [[overdue, "Overdue tasks", "maint"], [soon, "Due this week", "maint"], [bad, "Equipment to fix", "maint"]], "cross");
+      // The dashboard grid has 5 columns and the four cards fill two rows, so this card takes a full row.
+      card = card.replace('<div class="sc yellow">', '<div class="sc yellow" style="grid-column:1 / -1;min-height:0">');
       return h.replace('</div><div class="pills-row">', card + '</div><div class="pills-row">');
     };
   }
