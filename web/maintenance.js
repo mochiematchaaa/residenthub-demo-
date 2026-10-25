@@ -7,7 +7,9 @@
      staff     unit "__admin"  {id, name, role, phone}
      equipment unit "__admin"  {id, name, category, location, status, lastService}
      mtask     unit ""         {id, title, equipId, equipName, every, days, due, staffId, assignee, lastDone, history[]}
-     grievance (existing)      + staffId, assignee, target, equipId, equipName, notes */
+     mclosure  unit ""         {id: facility name, facility, equipName, reason}  (a facility closed for maintenance)
+     grievance (existing)      + staffId, assignee, target, equipId, equipName, notes, priority, resolvedOn, cost, completion
+     expense   (existing)      + equipId, grievanceId, taskId (repair and maintenance spending) */
 (function () {
   if (!window.RH_DEMO) return;
   var IS_ADMIN = window.RH_ROLE === "admin";
@@ -44,6 +46,57 @@
   function equipOptions() { return [["", "— None —"]].concat(equipList().map(function (e) { return [e.id, e.v.name + " · " + e.v.location]; })); }
   function staffNameOf(id) { var s = getRow("staff", id); return s ? s.value.name : ""; }
   function equipNameOf(id) { var e = getRow("equipment", id); return e ? e.value.name : ""; }
+  var PRIORITIES = ["Urgent", "High", "Normal", "Low"];
+  function prioChip(p) { return p ? '<span class="chip ' + (p === "Urgent" ? "bad" : p === "High" ? "warn" : "info") + '">' + esc(p) + "</span>" : ""; }
+  function money(n) { return peso(Number(n) || 0); }
+  function amenityNames() { return amenities().map(function (a) { return a.name; }); }
+  function closureOf(name) { var r = getRow("mclosure", name); return r ? r.value : null; }
+  // Facilities that residents cannot book are kept in a public "mclosure" record, so the resident site can read it.
+  async function syncClosures() {
+    var want = {};
+    list("equipment").forEach(function (e) {
+      if (e.v.facility && e.v.closes && e.v.status !== "Working") want[e.v.facility] = { id: e.v.facility, facility: e.v.facility, equipName: e.v.name, reason: e.v.status };
+    });
+    var have = list("mclosure");
+    for (var i = 0; i < have.length; i++) if (!want[have[i].id]) await del("mclosure", have[i].id);
+    for (var k in want) {
+      var cur = getRow("mclosure", k);
+      if (!cur || JSON.stringify(cur.value) !== JSON.stringify(want[k])) await put("mclosure", k, "", want[k]);
+    }
+  }
+  function warrantyChip(k) {
+    if (!k) return "—";
+    var n = daysTo(k);
+    return n < 0 ? '<span class="chip bad">Expired</span>' : n <= 30 ? '<span class="chip warn">Ends in ' + plural(n, "day") + "</span>" : esc(fd(k));
+  }
+  function isMaintExpense(e) { return !!(e.equipId || e.grievanceId || e.taskId); }
+  function spentOn(equipId) { return vals("expense").filter(function (e) { return e.equipId === equipId; }).reduce(function (s, e) { return s + expTotal(e); }, 0); }
+  function areaFor(equipId) {
+    var e = getRow("equipment", equipId), c = e ? e.value.category : "";
+    return c === "Elevator" ? "Elevators" : c === "Pool" ? "Swimming Pool" : c === "Security" ? "Offices and security" : "Lobby and common areas";
+  }
+  function costFields() {
+    return [{ name: "cost", label: "Cost of the repair or service (₱, optional)", type: "number", step: "0.01" }, { name: "completion", label: "What was done", type: "textarea", placeholder: "Short note for the record" }];
+  }
+  // Records the cost of a job as an expense, linked to the equipment and the job.
+  async function recordCost(d, item, ids) {
+    var cost = parseFloat(d.cost);
+    if (!(cost > 0)) return;
+    var eid = nextId();
+    await put("expense", eid, "__admin", Object.assign({ id: Number(eid), item: item, category: ids.category, area: ids.equipId ? areaFor(ids.equipId) : "Lobby and common areas", payee: ids.who || "", receiptNo: "", qty: 1, unitPrice: cost, date: dayKey(new Date()) }, ids.link));
+  }
+  function repairStats() {
+    var done = list("grievance").filter(function (r) { return Number(r.v.stage) >= 2 && r.v.resolvedOn && r.v.assignee; });
+    var days = done.map(function (r) { return Math.max(0, (kd(r.v.resolvedOn) - new Date(Number(r.id)).setHours(12, 0, 0, 0)) / 86400000); });
+    var avg = days.length ? days.reduce(function (a, b) { return a + b; }, 0) / days.length : null;
+    var now = new Date(), mk = now.getFullYear() + "-" + pad(now.getMonth() + 1);
+    var all = vals("expense").filter(isMaintExpense);
+    return {
+      n: done.length, avg: avg,
+      month: all.filter(function (e) { return String(e.date || "").slice(0, 7) === mk; }).reduce(function (s, e) { return s + expTotal(e); }, 0),
+      year: all.filter(function (e) { return String(e.date || "").slice(0, 4) === String(now.getFullYear()); }).reduce(function (s, e) { return s + expTotal(e); }, 0)
+    };
+  }
   function dueCount() { return tasks().filter(function (r) { var n = daysTo(r.v.due); return n != null && n <= 7; }).length; }
   function openRepairs(equipId) { return list("grievance").filter(function (r) { return r.v.equipId === equipId && !(Number(r.v.stage) >= 2); }).length; }
 
@@ -51,37 +104,46 @@
      ADMIN
      ========================================================================== */
   function viewMaint() {
-    var tab = state.mtab || "sched";
+    var tab = state.mtab || "sched", kind = state.mkind || "all";
     var ts = tasks(), overdue = ts.filter(function (r) { return daysTo(r.v.due) < 0; }).length;
     var soon = ts.filter(function (r) { var n = daysTo(r.v.due); return n >= 0 && n <= 7; }).length;
-    var eq = equipList(), bad = eq.filter(function (e) { return e.v.status !== "Working"; }).length;
+    var eq = equipList(), bad = eq.filter(function (e) { return e.v.status !== "Working"; }).length, rs = repairStats();
     var tabs = [["sched", "Schedule (" + ts.length + ")"], ["equip", "Equipment (" + eq.length + ")"], ["staff", "Staff (" + staffList().length + ")"]];
-    return '<div class="grid cols-3" style="margin-bottom:16px">' + statCard("Overdue tasks", overdue) + statCard("Due in the next 7 days", soon) + statCard("Equipment needing attention", bad) + "</div>" +
+    var closed = list("mclosure");
+    return '<div class="grid cols-4" style="margin-bottom:10px">' + statCard("Overdue tasks", overdue) + statCard("Due in the next 7 days", soon) + statCard("Equipment needing attention", bad) + statCard("Repair spend this month", money(rs.month)) + "</div>" +
+      '<p class="hint" style="margin:0 0 14px">' + (rs.avg == null ? "No finished repairs yet." : "Average repair time " + (rs.avg < 1 ? "under a day" : rs.avg.toFixed(1) + " days") + " across " + plural(rs.n, "finished repair") + ".") + " Maintenance spending this year: <b>" + money(rs.year) + "</b>." + (closed.length ? " Closed to bookings now: <b>" + closed.map(function (c) { return esc(c.v.facility); }).join(", ") + "</b>." : "") + "</p>" +
       '<div class="filters" style="margin-bottom:14px">' + tabs.map(function (t) {
         return '<button class="' + (tab === t[0] ? "active" : "") + '" onclick="set({mtab:\'' + t[0] + '\'})">' + t[1] + "</button>";
-      }).join("") + "</div>" + (tab === "equip" ? maintEquip(eq) : tab === "staff" ? maintStaff() : maintSched(ts));
+      }).join("") + "</div>" + (tab === "equip" ? maintEquip(eq) : tab === "staff" ? maintStaff() : maintSched(ts, kind));
   }
 
-  function maintSched(ts) {
-    var rows = ts.map(function (r) {
+  function maintSched(ts, kind) {
+    var shown = ts.filter(function (r) { return kind === "all" || (r.v.kind || "Routine") === kind; });
+    var rows = shown.map(function (r) {
       var t = r.v, st = taskState(t);
-      return "<tr><td><b>" + esc(t.title) + '</b><div style="font-size:12px;color:var(--muted)">Last done ' + esc(fd(t.lastDone)) + "</div></td><td>" + esc(t.equipName || "—") + "</td><td>" + esc(t.every) + "</td><td>" + esc(fd(t.due)) +
+      return "<tr><td><b>" + esc(t.title) + "</b>" + (t.kind === "Compliance" ? ' <span class="chip info">Compliance</span>' : "") + '<div style="font-size:12px;color:var(--muted)">Last done ' + esc(fd(t.lastDone)) + "</div></td><td>" + esc(t.equipName || "—") + "</td><td>" + esc(t.every) + "</td><td>" + esc(fd(t.due)) +
         '<div><span class="chip ' + st[1] + '">' + st[0] + "</span></div></td><td>" + esc(t.assignee || "Unassigned") + "</td><td style=\"white-space:nowrap\">" +
         '<button class="btn primary" style="min-height:32px;padding:0 10px;font-size:12px" onclick="maintDone(\'' + escAttr(r.id) + '\')">Mark done</button> ' +
+        "<button " + BTN + '" title="Post a notice to all residents" onclick="maintNotify(\'' + escAttr(r.id) + '\')">Notify residents</button> ' +
         "<button " + BTN + '" onclick="maintTaskForm(\'' + escAttr(r.id) + '\')">Edit</button> <button ' + BTN + ';color:#A02B1D" onclick="maintDelete(\'mtask\',\'' + escAttr(r.id) + '\')">Delete</button></td></tr>';
     });
-    return '<div style="margin-bottom:12px"><button class="btn primary" onclick="maintTaskForm(null)">+ Add task</button></div>' +
+    var kinds = [["all", "All"], ["Routine", "Routine"], ["Compliance", "Permits and tests"]];
+    return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button class="btn primary" onclick="maintTaskForm(null)">+ Add task</button><span class="filters">' + kinds.map(function (k) {
+      return '<button class="' + (kind === k[0] ? "active" : "") + '" onclick="set({mkind:\'' + k[0] + '\'})">' + k[1] + "</button>";
+    }).join("") + "</span></div>" +
       '<div class="card" style="padding:0;overflow:hidden">' + tableRows(rows, ["TASK", "EQUIPMENT", "REPEATS", "NEXT DUE", "ASSIGNED TO", ""], "No maintenance tasks yet. Add the first one.") + "</div>";
   }
 
   function maintEquip(eq) {
     var rows = eq.map(function (r) {
-      var e = r.v, n = openRepairs(r.id);
-      return "<tr><td><b>" + esc(e.name) + "</b></td><td>" + esc(e.category) + "</td><td>" + esc(e.location) + "</td><td>" + eqChip(e.status) + "</td><td>" + esc(fd(e.lastService)) + "</td><td>" + (n ? '<span class="chip warn">' + plural(n, "open repair") + "</span>" : "—") +
+      var e = r.v, n = openRepairs(r.id), sp = spentOn(r.id);
+      return "<tr><td><b>" + esc(e.name) + '</b><div style="font-size:12px;color:var(--muted)">' + esc(e.category) + (e.vendor ? " · " + esc(e.vendor) : "") + "</div></td><td>" + esc(e.location) + "</td><td>" + eqChip(e.status) +
+        (e.facility && e.closes ? '<div style="font-size:12px;color:var(--muted);margin-top:3px">Closes ' + esc(e.facility) + " while not working</div>" : "") + (n ? '<div><span class="chip warn">' + plural(n, "open repair") + "</span></div>" : "") +
+        "</td><td>" + warrantyChip(e.warranty) + "</td><td>" + (sp ? money(sp) : "—") + "</td><td>" + esc(fd(e.lastService)) +
         '</td><td style="white-space:nowrap"><button ' + BTN + '" onclick="maintEquipForm(\'' + escAttr(r.id) + '\')">Edit</button> <button ' + BTN + ';color:#A02B1D" onclick="maintDelete(\'equipment\',\'' + escAttr(r.id) + '\')">Delete</button></td></tr>';
     });
     return '<div style="margin-bottom:12px"><button class="btn primary" onclick="maintEquipForm(null)">+ Add equipment</button></div>' +
-      '<div class="card" style="padding:0;overflow:hidden">' + tableRows(rows, ["EQUIPMENT", "CATEGORY", "LOCATION", "STATUS", "LAST SERVICE", "REPAIRS", ""], "No equipment listed yet.") + "</div>";
+      '<div class="card" style="padding:0;overflow:hidden">' + tableRows(rows, ["EQUIPMENT", "LOCATION", "CONDITION", "WARRANTY", "SPENT", "LAST SERVICE", ""], "No equipment listed yet.") + "</div>";
   }
 
   function maintStaff() {
@@ -103,6 +165,7 @@
       title: id ? "Edit maintenance task" : "Add maintenance task",
       fields: [
         { name: "title", label: "Task", value: t.title, placeholder: "e.g. Elevator inspection" },
+        { name: "kind", label: "Type", type: "select", options: [["Routine", "Routine maintenance"], ["Compliance", "Permit, certificate or test"]], value: t.kind || "Routine" },
         { name: "equipId", label: "Equipment (optional)", type: "select", options: equipOptions(), value: t.equipId || "" },
         { name: "every", label: "Repeats", type: "select", options: FREQ.map(function (f) { return f[0]; }), value: t.every || "Monthly" },
         { name: "due", label: "Next due date", type: "date", value: t.due || dayKey(new Date()) },
@@ -112,9 +175,7 @@
         if (!d.title) return { error: "Enter the task." };
         if (!d.due) return { error: "Choose the next due date." };
         var f = FREQ.filter(function (x) { return x[0] === d.every; })[0] || FREQ[2], nid = id || String(nextId());
-        var v = Object.assign({}, t, { id: nid, title: d.title, equipId: d.equipId, equipName: d.equipId ? equipNameOf(d.equipId) : (t.equipName || ""), every: f[0], days: f[1], due: d.due, staffId: d.staffId, assignee: d.staffId ? staffNameOf(d.staffId) : "" });
-        if (!d.equipId && !id) v.equipName = "";
-        if (!d.equipId && id && t.equipId) v.equipName = "";
+        var v = Object.assign({}, t, { id: nid, kind: d.kind, title: d.title, equipId: d.equipId, equipName: d.equipId ? equipNameOf(d.equipId) : (t.equipId ? "" : (t.equipName || "")), every: f[0], days: f[1], due: d.due, staffId: d.staffId, assignee: d.staffId ? staffNameOf(d.staffId) : "" });
         await put("mtask", nid, "", v);
         logAct((id ? "Maintenance task updated: " : "Maintenance task added: ") + d.title, "Maintenance");
       }
@@ -130,12 +191,17 @@
         { name: "category", label: "Category", type: "select", options: EQ_CATS, value: e.category || EQ_CATS[0] },
         { name: "location", label: "Location", value: e.location, placeholder: "e.g. Basement pump room" },
         { name: "status", label: "Condition", type: "select", options: EQ_STATUS, value: e.status || "Working" },
+        { name: "facility", label: "Part of a bookable facility? (optional)", type: "select", options: [["", "— No —"]].concat(amenityNames().map(function (n) { return [n, n]; })), value: e.facility || "" },
+        { name: "closes", label: "If it is not working", type: "select", options: [["no", "Keep the facility open for booking"], ["yes", "Close the facility to booking"]], value: e.closes ? "yes" : "no" },
+        { name: "vendor", label: "Supplier or service company", value: e.vendor },
+        { name: "warranty", label: "Warranty ends (optional)", type: "date", value: e.warranty || "" },
         { name: "lastService", label: "Last serviced", type: "date", value: e.lastService || "" }
       ],
       onSubmit: async function (d) {
         if (!d.name) return { error: "Enter the equipment name." };
         var nid = id || String(nextId());
-        await put("equipment", nid, "__admin", Object.assign({}, e, { id: nid, name: d.name, category: d.category, location: d.location, status: d.status, lastService: d.lastService }));
+        await put("equipment", nid, "__admin", Object.assign({}, e, { id: nid, name: d.name, category: d.category, location: d.location, status: d.status, facility: d.facility, closes: d.closes === "yes", vendor: d.vendor, warranty: d.warranty, lastService: d.lastService }));
+        await syncClosures();
         logAct((id ? "Equipment updated: " : "Equipment added: ") + d.name, "Maintenance");
       }
     });
@@ -161,13 +227,43 @@
 
   window.maintDone = function (id) {
     var row = getRow("mtask", id); if (!row) return;
-    act(async function () {
-      var t = row.value, now = dayKey(new Date()), hist = [{ date: now, by: t.assignee || "Office" }].concat(t.history || []).slice(0, 12);
-      var next = addDays(now, Number(t.days) || 30);
-      await put("mtask", id, "", Object.assign({}, t, { lastDone: now, due: next, history: hist }));
-      if (t.equipId && getRow("equipment", t.equipId)) await put("equipment", t.equipId, "__admin", Object.assign({}, getRow("equipment", t.equipId).value, { lastService: now }));
-      logAct("Maintenance done: " + t.title, "Maintenance");
-      toast("Marked done. Next due " + fd(next) + ".");
+    var t = row.value;
+    openForm({
+      title: "Mark done",
+      intro: esc(t.title),
+      submit: "Mark done",
+      fields: costFields(),
+      onSubmit: async function (d) {
+        var now = dayKey(new Date()), hist = [{ date: now, by: t.assignee || "Office", note: d.completion || "", cost: parseFloat(d.cost) || 0 }].concat(t.history || []).slice(0, 12);
+        var next = addDays(now, Number(t.days) || 30);
+        await put("mtask", id, "", Object.assign({}, t, { lastDone: now, due: next, history: hist }));
+        if (t.equipId && getRow("equipment", t.equipId)) await put("equipment", t.equipId, "__admin", Object.assign({}, getRow("equipment", t.equipId).value, { lastService: now }));
+        await recordCost(d, "Maintenance: " + t.title, { category: "Janitorial and maintenance", equipId: t.equipId, who: t.assignee, link: { equipId: t.equipId || "", taskId: id } });
+        logAct("Maintenance done: " + t.title + (parseFloat(d.cost) > 0 ? " (" + money(parseFloat(d.cost)) + ")" : ""), "Maintenance");
+        toast("Marked done. Next due " + fd(next) + ".");
+      }
+    });
+  };
+
+  // Posts an announcement to every resident about a scheduled job.
+  window.maintNotify = function (id) {
+    var row = getRow("mtask", id); if (!row) return;
+    var t = row.value;
+    openForm({
+      title: "Notify residents",
+      intro: "This posts an announcement that every resident can read.",
+      submit: "Post notice",
+      fields: [
+        { name: "title", label: "Title", value: "Maintenance notice: " + t.title },
+        { name: "body", label: "Message", type: "textarea", value: "Scheduled on " + fd(t.due) + ": " + t.title + (t.equipName ? " (" + t.equipName + ")" : "") + ". Some areas may be briefly unavailable. Thank you for your understanding." }
+      ],
+      onSubmit: async function (d) {
+        if (!d.title) return { error: "Enter a title." };
+        var nid = nextId();
+        await put("announcement", nid, "", { id: nid, title: d.title, body: d.body || "—", date: shortDate(new Date()), status: "Published", type: "Maintenance" });
+        logAct("Maintenance notice posted: " + d.title, "Announcements");
+        toast("Notice posted for all residents.");
+      }
     });
   };
 
@@ -184,6 +280,7 @@
         if (linked) return { error: name + " is still used by " + plural(linked, "linked item") + ". Remove or finish those first." };
       }
       await del(kind, id);
+      if (kind === "equipment") await syncClosures();
       logAct("Deleted " + label + ": " + name, "Maintenance");
     }, true);
   };
@@ -197,12 +294,14 @@
       intro: esc(g.title),
       fields: [
         { name: "staffId", label: "Assigned to", type: "select", options: staffOptions(), value: g.staffId || "" },
+        { name: "priority", label: "Priority", type: "select", options: PRIORITIES, value: g.priority || "Normal" },
         { name: "target", label: "Target completion date", type: "date", value: g.target || addDays(dayKey(new Date()), 3) },
         { name: "equipId", label: "Related equipment (optional)", type: "select", options: equipOptions(), value: g.equipId || "" },
         { name: "notes", label: "Note for the repair", type: "textarea", value: g.notes, placeholder: "What needs to be done?" }
       ],
       onSubmit: async function (d) {
         var v = Object.assign({}, row.value);
+        v.priority = d.priority;
         if (d.staffId) {
           v.staffId = d.staffId; v.assignee = staffNameOf(d.staffId); v.target = d.target;
           if (!(Number(v.stage) >= 1)) v.stage = 1;
@@ -213,6 +312,7 @@
         if (d.staffId && d.equipId) {
           var e = getRow("equipment", d.equipId);
           if (e && e.value.status === "Working") await put("equipment", d.equipId, "__admin", Object.assign({}, e.value, { status: "Under maintenance" }));
+          await syncClosures();
         }
         logAct(d.staffId ? "Repair assigned to " + v.assignee + ": " + g.title : "Repair unassigned: " + g.title, "Requests");
         toast(d.staffId ? "Assigned to " + v.assignee + "." : "Assignment removed.");
@@ -220,27 +320,44 @@
     });
   };
 
-  // Resolving a grievance that is linked to equipment puts the equipment back to Working.
+  // Resolving a grievance asks what was done and what it cost. The cost becomes an expense linked to the equipment.
   window.advanceGr = function (id) {
     var row = getRow("grievance", id); if (!row) return;
-    act(async function () {
-      var st = Math.min(2, (Number(row.value.stage) || 0) + 1), now = dayKey(new Date());
-      var v = Object.assign({}, row.value, { stage: st });
-      if (st === 2) v.resolvedOn = now;
-      await put("grievance", id, row.unit, v);
-      if (st === 2 && v.equipId && getRow("equipment", v.equipId)) {
-        await put("equipment", v.equipId, "__admin", Object.assign({}, getRow("equipment", v.equipId).value, { status: "Working", lastService: now }));
+    var st = Math.min(2, (Number(row.value.stage) || 0) + 1);
+    if (st < 2) {
+      return act(async function () {
+        await put("grievance", id, row.unit, Object.assign({}, row.value, { stage: st }));
+        logAct("Grievance in progress: " + row.value.title, "Requests");
+      });
+    }
+    openForm({
+      title: "Mark resolved",
+      intro: esc(row.value.title),
+      submit: "Mark resolved",
+      fields: costFields(),
+      onSubmit: async function (d) {
+        var now = dayKey(new Date()), g = row.value;
+        var v = Object.assign({}, g, { stage: 2, resolvedOn: now });
+        if (d.completion) v.completion = d.completion;
+        if (parseFloat(d.cost) > 0) v.cost = parseFloat(d.cost);
+        await put("grievance", id, row.unit, v);
+        if (g.equipId && getRow("equipment", g.equipId)) {
+          await put("equipment", g.equipId, "__admin", Object.assign({}, getRow("equipment", g.equipId).value, { status: "Working", lastService: now }));
+          await syncClosures();
+        }
+        await recordCost(d, "Repair: " + g.title, { category: "Repairs and improvements", equipId: g.equipId, who: g.assignee, link: { equipId: g.equipId || "", grievanceId: Number(id) } });
+        logAct("Grievance resolved: " + g.title + (v.cost ? " (" + money(v.cost) + ")" : ""), "Requests");
       }
-      logAct("Grievance " + (st === 2 ? "resolved" : "in progress") + ": " + row.value.title, "Requests");
     });
   };
 
   function assignBlock(r) {
     var g = r.v, s = Math.min(2, Math.max(0, Number(g.stage) || 0)), late = g.target && s < 2 && daysTo(g.target) < 0;
     var body = g.assignee
-      ? 'Assigned to <b>' + esc(g.assignee) + "</b>" + (g.target ? " · target " + esc(fd(g.target)) + (late ? ' <span class="chip bad">Late</span>' : "") : "") +
+      ? 'Assigned to <b>' + esc(g.assignee) + "</b> " + prioChip(g.priority) + (g.target && s < 2 ? " · target " + esc(fd(g.target)) + (late ? ' <span class="chip bad">Late</span>' : "") : "") +
         (g.equipName ? '<div style="color:var(--muted)">Equipment: ' + esc(g.equipName) + "</div>" : "") +
-        (g.notes ? '<div style="color:var(--muted);font-style:italic">“' + esc(g.notes) + "”</div>" : "")
+        (g.notes && s < 2 ? '<div style="color:var(--muted);font-style:italic">“' + esc(g.notes) + "”</div>" : "") +
+        (s === 2 && (g.completion || g.cost) ? '<div style="color:var(--muted)">Done ' + esc(fd(g.resolvedOn)) + (g.completion ? ": " + esc(g.completion) : "") + (g.cost ? " · cost " + money(g.cost) : "") + "</div>" : "")
       : '<span style="color:var(--muted)">Not assigned to anyone yet.</span>';
     return '<div style="margin-top:10px;padding:10px 12px;border:1px dashed var(--border2);border-radius:12px;font-size:13px;line-height:1.5">' + body + "</div>";
   }
@@ -271,7 +388,10 @@
     }).join("");
     var done = ts.filter(function (r) { return r.v.lastDone; }).sort(function (a, b) { return String(b.v.lastDone).localeCompare(String(a.v.lastDone)); }).slice(0, 5);
     var mine = newest(list("grievance")).filter(function (r) { return r.unit === myUnit() && !(Number(r.v.stage) >= 2) && r.v.assignee; });
-    return '<div class="card" style="padding:0;overflow:hidden"><div style="padding:16px 22px"><h2 style="font-size:19px;margin-bottom:2px">Coming up in the next 30 days</h2><p style="margin:0;font-size:13px;color:var(--muted)">Routine checks and servicing planned by the office. Some work may cause short interruptions.</p></div>' +
+    var closed = list("mclosure").map(function (r) {
+      return '<div class="card" style="background:var(--warn-bg);color:var(--warn-fg);margin-bottom:12px"><b>' + esc(r.v.facility) + ' is closed for maintenance.</b> ' + esc(r.v.equipName) + " is " + esc(String(r.v.reason).toLowerCase()) + ". It cannot be booked until it is working again.</div>";
+    }).join("");
+    return closed + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:16px 22px"><h2 style="font-size:19px;margin-bottom:2px">Coming up in the next 30 days</h2><p style="margin:0;font-size:13px;color:var(--muted)">Routine checks and servicing planned by the office. Some work may cause short interruptions.</p></div>' +
       (rows || '<div style="padding:22px;text-align:center;color:var(--muted);border-top:1px solid var(--border2)">Nothing is scheduled in the next 30 days.</div>') + "</div>" +
       '<div class="two-col-e" style="margin-top:16px"><div class="card"><h2 style="font-size:19px;margin-bottom:6px">Recently completed</h2>' + (done.map(function (r) {
         return '<div style="padding:10px 0;border-top:1px solid var(--border2)"><b>' + esc(r.v.title) + '</b><div style="font-size:13px;color:var(--muted)">' + esc(fd(r.v.lastDone)) + (r.v.assignee ? " · " + esc(r.v.assignee) : "") + "</div></div>";
@@ -291,7 +411,7 @@
           all.map(function (r) {
             var g = r.v, s = Math.min(2, Math.max(0, Number(g.stage) || 0));
             var info = g.assignee ? '<div style="margin-top:8px;font-size:13px;line-height:1.5">Assigned to <b>' + esc(g.assignee) + "</b>" + (g.target ? " · target " + esc(fd(g.target)) : "") +
-              (g.equipName ? '<div style="color:var(--muted)">Related to: ' + esc(g.equipName) + "</div>" : "") + (g.notes ? '<div style="color:var(--muted)">Update from the office: ' + esc(g.notes) + "</div>" : "") + "</div>" : "";
+              (g.equipName ? '<div style="color:var(--muted)">Related to: ' + esc(g.equipName) + "</div>" : "") + (g.notes && s < 2 ? '<div style="color:var(--muted)">Update from the office: ' + esc(g.notes) + "</div>" : "") + (s === 2 && g.completion ? '<div style="color:var(--muted)">Completed' + (g.resolvedOn ? " " + esc(fd(g.resolvedOn)) : "") + ": " + esc(g.completion) + "</div>" : "") + "</div>" : "";
             return '<div style="padding:12px 0;border-top:1px solid var(--border2)"><div style="font-weight:700;font-size:15px">' + esc(g.title) + '</div><div style="font-size:13px;color:var(--muted);margin:2px 0 6px">' + esc(g.body) + '</div><span class="chip ' + (s === 2 ? "good" : s === 1 ? "warn" : "info") + '">' + names[s] + "</span>" + info + "</div>";
           }).join("")) + "</div></div>";
     };
@@ -300,6 +420,22 @@
   /* ==========================================================================
      Hooks into the real pages (nothing is edited in the real files)
      ========================================================================== */
+  // A facility with equipment that is not working (and set to close) cannot be booked.
+  var origSlot = window.slotState;
+  window.slotState = function (f, i, day) {
+    var st = origSlot(f, i, day);
+    if (st === "open") { var a = facilities()[f]; if (a && closureOf(a.name)) return "closed"; }
+    return st;
+  };
+  var origBook = window.viewBook;
+  if (origBook) {
+    window.viewBook = function () {
+      var fl = facilities(), cur = fl[Math.min(state.facIdx || 0, fl.length - 1)], c = cur && closureOf(cur.name), h = origBook();
+      if (!c) return h;
+      return '<div class="card" style="background:var(--warn-bg);color:var(--warn-fg);margin-bottom:12px"><b>' + esc(c.facility) + " is closed for maintenance.</b> " + esc(c.equipName) + " is " + esc(String(c.reason).toLowerCase()) + ". Booking is paused until it is working again.</div>" + h;
+    };
+  }
+
   var origTitles = window.titles;
   window.titles = function () {
     if (state.view === "maint") {

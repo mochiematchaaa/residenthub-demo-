@@ -4,7 +4,7 @@
    and can be reset from the DEMO panel. The sample dates are always built around today.
    Loaded INSTEAD of supabase-js and supabase-config.js. The real system does not use this file. */
 (function () {
-  var KEY = "__rhdemo_v3", SESS = "__rhdemo_session";
+  var KEY = "__rhdemo_v4", SESS = "__rhdemo_session";
   window.RH_SUPABASE = { url: "demo", anonKey: "demo" };
   window.RH_DEMO = true;
 
@@ -251,8 +251,21 @@
       ["E-09", "Lobby aircon", "Air conditioning", "Lobby", "Working", -29], ["E-10", "Parking gate sensor", "Security", "Motor parking gate", "Under maintenance", -12],
       ["E-11", "Gym shower water heater", "Plumbing", "Gym", "Needs repair", -90], ["E-12", "CCTV system", "Security", "Security office", "Working", -3]
     ];
+    EQUIP.push(["E-13", "Billiard table", "Other", "Game Room", "Under maintenance", -200]);
+    /* facility it belongs to (closes: the facility cannot be booked while this is not working), vendor, warranty ends in days */
+    var EQX = {
+      "E-01": ["", 0, "LiftCare Services", -60], "E-02": ["", 0, "LiftCare Services", 20], "E-03": ["", 0, "AquaFlow Trading", 300], "E-04": ["", 0, "PowerPro Gensets", 200],
+      "E-05": ["", 0, "SafeGuard Fire Systems", 400], "E-06": ["", 0, "SafeGuard Fire Systems", null], "E-07": ["Swimming Pool", 1, "AquaFlow Trading", 150],
+      "E-08": ["Gym", 0, "FitGear Supply", -30], "E-09": ["", 0, "CoolAir Services", 90], "E-10": ["", 0, "SecureTech", 10], "E-11": ["Gym", 0, "AquaFlow Trading", -200],
+      "E-12": ["", 0, "SecureTech", 260], "E-13": ["Game Room", 1, "FitGear Supply", null]
+    };
     var equipName = {};
-    EQUIP.forEach(function (x) { equipName[x[0]] = x[1]; R("equipment", x[0], "__admin", { id: x[0], name: x[1], category: x[2], location: x[3], status: x[4], lastService: dk(dayOff(x[5])) }); });
+    EQUIP.forEach(function (x) {
+      var X = EQX[x[0]] || ["", 0, "", null];
+      equipName[x[0]] = x[1];
+      R("equipment", x[0], "__admin", { id: x[0], name: x[1], category: x[2], location: x[3], status: x[4], lastService: dk(dayOff(x[5])), facility: X[0], closes: !!X[1], vendor: X[2], warranty: X[3] == null ? "" : dk(dayOff(X[3])) });
+      if (X[0] && X[1] && x[4] !== "Working") R("mclosure", X[0], "", { id: X[0], facility: X[0], equipName: x[1], reason: x[4] });
+    });
     /* preventive maintenance tasks (residents can read the schedule): id, title, equipment, every, days, due in days, who, last done in days ago */
     [["T-01", "Elevator inspection and lubrication", "E-01", "Monthly", 30, 5, "S-04", 26], ["T-02", "Fire extinguisher pressure check", "E-06", "Every 3 months", 90, 21, "S-06", 69],
       ["T-03", "Generator test run", "E-04", "Every 2 weeks", 14, -2, "S-02", 16], ["T-04", "Water pump servicing", "E-03", "Every 3 months", 90, 12, "S-01", 78],
@@ -260,19 +273,38 @@
       ["T-07", "Lobby aircon filter cleaning", "E-09", "Monthly", 30, 0, "S-04", 30], ["T-08", "Water tank cleaning", "", "Every 6 months", 180, 40, "S-01", 140],
       ["T-09", "CCTV camera check", "E-12", "Weekly", 7, 4, "S-06", 3], ["T-10", "Gym equipment inspection", "E-08", "Every 2 weeks", 14, 6, "S-05", 8]
     ].forEach(function (t) {
-      R("mtask", t[0], "", { id: t[0], title: t[1], equipId: t[2], equipName: t[2] ? equipName[t[2]] : "Rooftop water tank", every: t[3], days: t[4], due: dk(dayOff(t[5])), staffId: t[6], assignee: staffName[t[6]], lastDone: dk(dayOff(-t[7])),
+      R("mtask", t[0], "", { id: t[0], kind: "Routine", title: t[1], equipId: t[2], equipName: t[2] ? equipName[t[2]] : "Rooftop water tank", every: t[3], days: t[4], due: dk(dayOff(t[5])), staffId: t[6], assignee: staffName[t[6]], lastDone: dk(dayOff(-t[7])),
         history: [{ date: dk(dayOff(-t[7])), by: staffName[t[6]] }, { date: dk(dayOff(-t[7] - t[4])), by: staffName[t[6]] }] });
     });
-    /* repair assignments on some grievances: stage, staff, target in days, equipment, note */
+    /* compliance renewals (permits, certificates, tests) */
+    [["T-11", "Fire safety inspection certificate renewal", "", "Whole building", "Yearly", 365, 60, "S-06", 305], ["T-12", "Elevator operating certificate renewal", "E-02", "", "Yearly", 365, 95, "S-04", 270],
+      ["T-13", "Drinking water quality test", "", "Water supply", "Every 6 months", 180, 20, "S-01", 160]
+    ].forEach(function (t) {
+      R("mtask", t[0], "", { id: t[0], kind: "Compliance", title: t[1], equipId: t[2], equipName: t[2] ? equipName[t[2]] : t[3], every: t[4], days: t[5], due: dk(dayOff(t[6])), staffId: t[7], assignee: staffName[t[7]], lastDone: dk(dayOff(-t[8])),
+        history: [{ date: dk(dayOff(-t[8])), by: staffName[t[7]] }] });
+    });
+    /* repair assignments on some grievances: stage, staff, target in days, equipment, note, priority, resolved days ago, cost, completion note */
     var GRX = {
-      0: [1, "S-01", 2, "", "Checking the pipe above the ceiling near Elevator A."], 1: [2, "S-02", -3, "", "Replaced the lamp and the starter."],
-      3: [1, "S-02", 3, "E-10", "Waiting for a replacement sensor from the supplier."], 4: [1, "S-05", 5, "E-08", "Motor belt ordered. Treadmill 2 is closed until it is fixed."],
-      5: [1, "S-04", 1, "E-01", "Elevator technician is scheduled to visit."], 8: [1, "S-01", 4, "E-11", "Heating element must be replaced."]
+      0: [1, "S-01", 2, "", "Checking the pipe above the ceiling near Elevator A.", "High"],
+      1: [2, "S-02", -1, "", "Replaced the lamp and the starter.", "Normal", -1, 450, "Lamp and starter replaced."],
+      3: [1, "S-02", 3, "E-10", "Waiting for a replacement sensor from the supplier.", "High"],
+      4: [1, "S-05", 5, "E-08", "Motor belt ordered. Treadmill 2 is closed until it is fixed.", "Normal"],
+      5: [1, "S-04", 1, "E-01", "Elevator technician is scheduled to visit.", "Urgent"],
+      7: [2, "S-05", -4, "", "Applied anti-slip coating on the shallow-end steps.", "Normal", -5, 1800, "Anti-slip coating applied."],
+      8: [1, "S-01", 4, "E-11", "Heating element must be replaced.", "Normal"],
+      10: [2, "S-01", -3, "E-03", "Cleaned the pressure tank and adjusted the pump.", "High", -4, 3500, "Pump pressure restored."]
     };
     GR.forEach(function (g, i) {
       var id = tid() - i * 86400000 * 1.5, u = i < 2 ? U[7] : pick(withAcc), st = i < 2 ? (i === 0 ? 1 : 2) : (rnd() < 0.35 ? 0 : rnd() < 0.5 ? 1 : 2);
       var val = { id: Math.round(id), title: g[0], body: g[1], by: u.label, stage: st }, x = GRX[i];
-      if (x) Object.assign(val, { stage: x[0], staffId: x[1], assignee: staffName[x[1]], target: dk(dayOff(x[2])), equipId: x[3], equipName: x[3] ? equipName[x[3]] : "", notes: x[4] });
+      if (x) {
+        Object.assign(val, { stage: x[0], staffId: x[1], assignee: staffName[x[1]], target: dk(dayOff(x[2])), equipId: x[3], equipName: x[3] ? equipName[x[3]] : "", notes: x[4], priority: x[5] });
+        if (x[0] === 2) {
+          Object.assign(val, { resolvedOn: dk(dayOff(x[6])), cost: x[7], completion: x[8] });
+          var eid = tid();
+          R("expense", eid, "__admin", { id: eid, item: "Repair: " + g[0], category: "Repairs and improvements", area: x[3] === "E-03" ? "Whole building" : "Lobby and common areas", payee: staffName[x[1]], receiptNo: "R-" + (9000 + i), qty: 1, unitPrice: x[7], date: dk(dayOff(x[6])), equipId: x[3], grievanceId: Math.round(id) });
+        }
+      }
       R("grievance", Math.round(id), u.label, val);
     });
 
