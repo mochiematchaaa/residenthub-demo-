@@ -12,6 +12,7 @@ for f in ("shared.js", "core.js", "admin.js", "admin-more.js", "resident.js", "a
           "profile-refresh.css", "rh-extra.css", "logo.jpg", "resident-login-bg.jpg"):
     shutil.copy(os.path.join(src, f), os.path.join(out, f))
 shutil.copy(os.path.join(src, "demo", "demo-backend.js"), os.path.join(out, "demo-backend.js"))
+shutil.copy(os.path.join(src, "demo", "maintenance.js"), os.path.join(out, "maintenance.js"))
 for name in ("admin.html", "resident.html"):
     s = open(os.path.join(src, "demo", name), encoding="utf-8").read()
     s = s.replace('"../', '"')
