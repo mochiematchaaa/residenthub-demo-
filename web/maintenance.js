@@ -8,6 +8,7 @@
      equipment unit "__admin"  {id, name, category, location, status, lastService}
      mtask     unit ""         {id, title, equipId, equipName, every, days, due, staffId, assignee, lastDone, history[]}
      mclosure  unit ""         {id: facility name, facility, equipName, reason}  (a facility closed for maintenance)
+     mtype     unit "__admin"  {id, name}  (a task type the administrator created; a task's kind holds the type name)
      grievance (existing)      + staffId, assignee, target, equipId, equipName, notes, priority, resolvedOn, cost, completion
      expense   (existing)      + equipId, grievanceId, taskId (repair and maintenance spending) */
 (function () {
@@ -17,6 +18,13 @@
   var FREQ = [["Weekly", 7], ["Every 2 weeks", 14], ["Monthly", 30], ["Every 3 months", 90], ["Every 6 months", 180], ["Yearly", 365]];
   var EQ_STATUS = ["Working", "Needs repair", "Under maintenance"];
   var EQ_CATS = ["Elevator", "Plumbing", "Electrical", "Fire safety", "Pool", "Gym", "Air conditioning", "Security", "Other"];
+  // Task types: two built in, plus any the administrator creates (stored as "mtype" records; a task's "kind" holds the name).
+  var TYPES = [["Routine", "Routine maintenance", "Routine"], ["Compliance", "Permit, certificate or test", "Permits and tests"]];
+  function customTypes() { return list("mtype").sort(function (a, b) { return String(a.v.name).localeCompare(String(b.v.name)); }); }
+  function typeOptions() { return TYPES.map(function (t) { return [t[0], t[1]]; }).concat(customTypes().map(function (r) { return [r.v.name, r.v.name]; })); }
+  function typeLabel(k) { k = k || "Routine"; for (var i = 0; i < TYPES.length; i++) if (TYPES[i][0] === k) return TYPES[i][1]; return k; }
+  window.maintTypeLabel = typeLabel; // the Excel export uses it
+  function cleanTypeName(n) { return String(n || "").replace(/['"\\<>&]/g, "").replace(/\s+/g, " ").trim().slice(0, 40); }
   var BTN = 'class="btn" style="min-height:32px;padding:0 10px;font-size:12px';
 
   NAV_ICONS.maint = '<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4h6v3H9zM9 14l2 2 4-4"/>';
@@ -121,16 +129,17 @@
     var shown = ts.filter(function (r) { return kind === "all" || (r.v.kind || "Routine") === kind; });
     var rows = shown.map(function (r) {
       var t = r.v, st = taskState(t);
-      return "<tr><td><b>" + esc(t.title) + "</b>" + (t.kind === "Compliance" ? ' <span class="chip info">Compliance</span>' : "") + '<div style="font-size:12px;color:var(--muted)">Last done ' + esc(fd(t.lastDone)) + "</div></td><td>" + esc(t.equipName || "—") + "</td><td>" + esc(t.every) + "</td><td>" + esc(fd(t.due)) +
+      return "<tr><td><b>" + esc(t.title) + "</b>" + ((t.kind || "Routine") !== "Routine" ? ' <span class="chip info">' + esc(t.kind === "Compliance" ? "Compliance" : t.kind) + "</span>" : "") + '<div style="font-size:12px;color:var(--muted)">Last done ' + esc(fd(t.lastDone)) + "</div></td><td>" + esc(t.equipName || "—") + "</td><td>" + esc(t.every) + "</td><td>" + esc(fd(t.due)) +
         '<div><span class="chip ' + st[1] + '">' + st[0] + "</span></div></td><td>" + esc(t.assignee || "Unassigned") + "</td><td style=\"white-space:nowrap\">" +
         '<button class="btn primary" style="min-height:32px;padding:0 10px;font-size:12px" onclick="maintDone(\'' + escAttr(r.id) + '\')">Mark done</button> ' +
         "<button " + BTN + '" title="Post a notice to all residents" onclick="maintNotify(\'' + escAttr(r.id) + '\')">Notify residents</button> ' +
         "<button " + BTN + '" onclick="maintTaskForm(\'' + escAttr(r.id) + '\')">Edit</button> <button ' + BTN + ';color:#A02B1D" onclick="maintDelete(\'mtask\',\'' + escAttr(r.id) + '\')">Delete</button></td></tr>';
     });
-    var kinds = [["all", "All"], ["Routine", "Routine"], ["Compliance", "Permits and tests"]];
+    var kinds = [["all", "All"]].concat(TYPES.map(function (t) { return [t[0], t[2]]; }), customTypes().map(function (r) { return [r.v.name, r.v.name]; }));
+    var isCustom = customTypes().some(function (r) { return r.v.name === kind; });
     return '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px"><button class="btn primary" onclick="maintTaskForm(null)">+ Add task</button><span class="filters">' + kinds.map(function (k) {
       return '<button class="' + (kind === k[0] ? "active" : "") + '" onclick="set({mkind:\'' + k[0] + '\'})">' + k[1] + "</button>";
-    }).join("") + "</span></div>" +
+    }).join("") + "</span>" + (isCustom ? '<button ' + BTN + ';color:#A02B1D" title="Remove this type from the list" onclick="maintDeleteType(\'' + escAttr(kind) + '\')">Delete type “' + esc(kind) + '”</button>' : "") + "</div>" +
       '<div class="card" style="padding:0;overflow:hidden">' + tableRows(rows, ["TASK", "EQUIPMENT", "REPEATS", "NEXT DUE", "ASSIGNED TO", ""], "No maintenance tasks yet. Add the first one.") + "</div>";
   }
 
@@ -165,7 +174,8 @@
       title: id ? "Edit maintenance task" : "Add maintenance task",
       fields: [
         { name: "title", label: "Task", value: t.title, placeholder: "e.g. Elevator inspection" },
-        { name: "kind", label: "Type", type: "select", options: [["Routine", "Routine maintenance"], ["Compliance", "Permit, certificate or test"]], value: t.kind || "Routine" },
+        { name: "kind", label: "Type", type: "select", options: typeOptions(), value: t.kind || "Routine" },
+        { name: "newKind", label: "Or create a new type", value: "", placeholder: "e.g. Inspection (leave empty to use the type above)" },
         { name: "equipId", label: "Equipment (optional)", type: "select", options: equipOptions(), value: t.equipId || "" },
         { name: "every", label: "Repeats", type: "select", options: FREQ.map(function (f) { return f[0]; }), value: t.every || "Monthly" },
         { name: "due", label: "Next due date", type: "date", value: t.due || dayKey(new Date()) },
@@ -174,8 +184,14 @@
       onSubmit: async function (d) {
         if (!d.title) return { error: "Enter the task." };
         if (!d.due) return { error: "Choose the next due date." };
+        var kindName = d.kind || "Routine", nk = cleanTypeName(d.newKind);
+        if (nk) {
+          var known = typeOptions().filter(function (o) { return o[0].toLowerCase() === nk.toLowerCase() || o[1].toLowerCase() === nk.toLowerCase(); })[0];
+          if (known) kindName = known[0];
+          else { await put("mtype", String(nextId()), "__admin", { name: nk }); kindName = nk; logAct("Maintenance type added: " + nk, "Maintenance"); }
+        }
         var f = FREQ.filter(function (x) { return x[0] === d.every; })[0] || FREQ[2], nid = id || String(nextId());
-        var v = Object.assign({}, t, { id: nid, kind: d.kind, title: d.title, equipId: d.equipId, equipName: d.equipId ? equipNameOf(d.equipId) : (t.equipId ? "" : (t.equipName || "")), every: f[0], days: f[1], due: d.due, staffId: d.staffId, assignee: d.staffId ? staffNameOf(d.staffId) : "" });
+        var v = Object.assign({}, t, { id: nid, kind: kindName, title: d.title, equipId: d.equipId, equipName: d.equipId ? equipNameOf(d.equipId) : (t.equipId ? "" : (t.equipName || "")), every: f[0], days: f[1], due: d.due, staffId: d.staffId, assignee: d.staffId ? staffNameOf(d.staffId) : "" });
         await put("mtask", nid, "", v);
         logAct((id ? "Maintenance task updated: " : "Maintenance task added: ") + d.title, "Maintenance");
       }
@@ -282,6 +298,17 @@
       await del(kind, id);
       if (kind === "equipment") await syncClosures();
       logAct("Deleted " + label + ": " + name, "Maintenance");
+    }, true);
+  };
+
+  window.maintDeleteType = function (name) {
+    var row = customTypes().filter(function (r) { return r.v.name === name; })[0]; if (!row) return;
+    confirmBox("Delete type", "Delete the type “" + name + "”? It is only removed from the list.", "Delete", async function () {
+      var used = tasks().filter(function (t) { return t.v.kind === name; }).length;
+      if (used) return { error: "“" + name + "” is still used by " + plural(used, "task") + ". Change those tasks to another type first." };
+      await del("mtype", row.id);
+      set({ mkind: "all" });
+      logAct("Maintenance type deleted: " + name, "Maintenance");
     }, true);
   };
 
@@ -457,15 +484,76 @@
   };
 
   if (IS_ADMIN) {
-    // A Maintenance card on the dashboard.
+    // A Maintenance card on the dashboard: numbers, two progress bars and the next tasks coming up.
+    var st = document.createElement("style");
+    st.textContent =
+      ".sc.mt{grid-column:1 / -1 !important;min-height:0 !important;display:grid !important;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:18px 30px;padding:24px 28px}" +
+      ".sc.mt .mt-left,.sc.mt .mt-right{position:relative;z-index:1;min-width:0;display:flex;flex-direction:column;gap:14px}" +
+      ".sc.mt .mt-head{display:flex;align-items:center;gap:13px}" +
+      ".sc.mt .mt-ico{flex:none;width:46px;height:46px;border-radius:16px;display:grid;place-items:center;background:rgba(255,255,255,.75);box-shadow:0 6px 14px rgba(9,39,91,.12)}" +
+      ".sc.mt .mt-ico svg{width:24px;height:24px;fill:none;stroke:#09275b;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}" +
+      ".sc.mt .mt-head small{display:block;margin-top:2px;font-size:12.5px;opacity:.7}" +
+      ".sc.mt .sc-nums{margin-top:0;padding-top:0;flex-wrap:nowrap;gap:6px 18px}.sc.mt .sc-nums span{white-space:nowrap}" +
+      ".sc.mt .sc-nums b.bad{color:#b3261e}.sc.mt .sc-nums b.warn{color:#9a5b00}" +
+      ".sc.mt .mt-meter{display:flex;flex-direction:column;gap:6px}" +
+      ".sc.mt .mt-meter>div:first-child{display:flex;justify-content:space-between;gap:10px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;opacity:.75}" +
+      ".sc.mt .mt-bar{display:flex;gap:3px;height:12px}" +
+      ".sc.mt .mt-bar i{display:block;height:100%;min-width:6px;border-radius:99px;transition:flex .6s ease}" +
+      ".sc.mt .mt-bar i.none{flex:1;background:rgba(255,255,255,.65)}" +
+      ".sc.mt .mt-leg{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px}" +
+      ".sc.mt .mt-leg span{display:inline-flex;align-items:center;gap:6px}" +
+      ".sc.mt .mt-leg em{width:9px;height:9px;border-radius:50%;display:inline-block}" +
+      ".sc.mt .mt-right{background:rgba(255,255,255,.55);border-radius:20px;padding:16px 16px 14px}" +
+      ".sc.mt .mt-right h4{margin:0;font-size:15px;font-weight:600;line-height:1.2;color:#09275b;display:flex;justify-content:space-between;align-items:center;gap:10px}" +
+      ".sc.mt .mt-right h4 button{border:0;background:none;font-size:12.5px;font-weight:600;font-family:inherit;color:#1d4ed8;cursor:pointer;padding:4px 0}" +
+      ".sc.mt .mt-row{display:flex;align-items:center;gap:11px;width:100%;padding:9px 11px;border:0;border-radius:14px;background:rgba(255,255,255,.85);text-align:left;font:inherit;color:inherit;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease}" +
+      ".sc.mt .mt-row:hover{transform:translateX(3px);box-shadow:0 6px 14px rgba(9,39,91,.1)}" +
+      ".sc.mt .mt-row b{display:block;font-size:14px;font-weight:600;color:#09275b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".sc.mt .mt-row small{display:block;margin-top:1px;font-size:12px;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
+      ".sc.mt .mt-row>span:nth-child(2){min-width:0;flex:1}" +
+      ".sc.mt .mt-when{flex:none;min-width:78px;text-align:center;font-size:11.5px;font-weight:700;padding:6px 9px;border-radius:99px}" +
+      ".sc.mt .mt-when.bad{background:#ffd9d4;color:#a02b1d}.sc.mt .mt-when.warn{background:#ffe9b8;color:#8a5a00}.sc.mt .mt-when.good{background:#d6f3e4;color:#1e7a4f}" +
+      ".sc.mt .mt-empty{font-size:13.5px;opacity:.75;padding:10px 4px}" +
+      "@media (max-width:900px){.sc.mt{grid-template-columns:minmax(0,1fr)}}";
+    document.head.appendChild(st);
+
+    function bar(parts, empty) { // parts: [[count, colour], ...]
+      var total = parts.reduce(function (s, p) { return s + p[0]; }, 0);
+      if (!total) return '<div class="mt-bar"><i class="none"></i></div>';
+      return '<div class="mt-bar">' + parts.filter(function (p) { return p[0] > 0; }).map(function (p) { return '<i style="flex:' + p[0] + ';background:' + p[2] + '"></i>'; }).join("") + "</div>";
+    }
+    function legend(parts) { return '<div class="mt-leg">' + parts.map(function (p) { return '<span><em style="background:' + p[2] + '"></em>' + p[0] + " " + esc(p[1]) + "</span>"; }).join("") + "</div>"; }
+    function whenLabel(t) {
+      var n = daysTo(t.due);
+      if (n == null) return ["No date", "good"];
+      if (n < 0) return [-n + (n === -1 ? " day late" : " days late"), "bad"];
+      if (n === 0) return ["Today", "warn"];
+      if (n <= 7) return ["In " + n + (n === 1 ? " day" : " days"), "warn"];
+      return [fd(t.due), "good"];
+    }
+
     var origHome = window.viewHome;
     window.viewHome = function () {
-      var h = origHome(), ts = tasks();
-      var overdue = ts.filter(function (r) { return daysTo(r.v.due) < 0; }).length, soon = dueCount() - overdue;
-      var bad = equipList().filter(function (e) { return e.v.status !== "Working"; }).length;
-      var card = summaryCard("yellow", "Maintenance", [[overdue, "Overdue tasks", "maint"], [soon, "Due this week", "maint"], [bad, "Equipment to fix", "maint"]], "cross");
+      var h = origHome(), ts = tasks(), eq = equipList();
+      var overdue = ts.filter(function (r) { return daysTo(r.v.due) < 0; }).length, soon = dueCount() - overdue, later = Math.max(0, ts.length - overdue - soon);
+      var working = eq.filter(function (e) { return e.v.status === "Working"; }).length;
+      var under = eq.filter(function (e) { return e.v.status === "Under maintenance"; }).length, bad = eq.length - working - under;
+      var RED = "#e5534b", AMB = "#f2a33a", GRN = "#14a38b";
+      var tp = [[overdue, "Overdue", RED], [soon, "Due this week", AMB], [later, "Scheduled later", GRN]];
+      var ep = [[working, "Working", GRN], [under, "Under maintenance", AMB], [bad, "Needs repair", RED]];
+      var next = ts.slice(0, 4).map(function (r) {
+        var t = r.v, w = whenLabel(t);
+        return '<button class="mt-row" onclick="set({view:\'maint\'})"><span class="mt-when ' + w[1] + '">' + esc(w[0]) + "</span><span><b>" + esc(t.title) + "</b><small>" + esc(t.equipName || "Whole building") + " · " + esc(t.assignee || "Unassigned") + "</small></span></button>";
+      }).join("");
+      var left = '<div class="mt-left"><div class="mt-head"><span class="mt-ico"><svg viewBox="0 0 24 24">' + NAV_ICONS.maint + "</svg></span><div><h3>Maintenance</h3><small>" + plural(ts.length, "scheduled task") + " · " + plural(eq.length, "piece") + " of equipment</small></div></div>" +
+        '<div class="sc-nums"><button onclick="set({view:\'maint\'})"><b class="' + (overdue ? "bad" : "") + '">' + overdue + "</b><span>Overdue tasks</span></button>" +
+        '<button onclick="set({view:\'maint\'})"><b class="' + (soon ? "warn" : "") + '">' + soon + "</b><span>Due this week</span></button>" +
+        '<button onclick="set({view:\'maint\'})"><b class="' + (bad ? "bad" : "") + '">' + (bad + under) + "</b><span>Equipment to fix</span></button></div>" +
+        '<div class="mt-meter"><div><span>Tasks</span><span>' + ts.length + " in total</span></div>" + bar(tp) + legend(tp) + "</div>" +
+        '<div class="mt-meter"><div><span>Equipment condition</span><span>' + working + " of " + eq.length + " working</span></div>" + bar(ep) + legend(ep) + "</div></div>";
+      var right = '<div class="mt-right"><h4>Coming up<button onclick="set({view:\'maint\'})">See schedule →</button></h4>' + (next || '<div class="mt-empty">No maintenance tasks yet. Add the first one.</div>') + "</div>";
+      var card = '<div class="sc yellow mt">' + left + right + "</div>";
       // The dashboard grid has 5 columns and the four cards fill two rows, so this card takes a full row.
-      card = card.replace('<div class="sc yellow">', '<div class="sc yellow" style="grid-column:1 / -1;min-height:0">');
       return h.replace('</div><div class="pills-row">', card + '</div><div class="pills-row">');
     };
   }

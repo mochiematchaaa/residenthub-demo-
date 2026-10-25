@@ -414,7 +414,7 @@
       add("Maintenance", "Maintenance schedule", [["Task", "text", { w: 36 }], ["Type", "text", { w: 28 }], ["Equipment", "text", { w: 24 }], ["Repeats", "text", { w: 16 }], ["Next due", "date"], ["Status", "status", { cf: "sched", w: 22 }], ["Assigned to", "text", { w: 22 }], ["Last done", "date"]],
         sorted(list("mtask"), function (a, b) { return String(a.v.due).localeCompare(String(b.v.due)); }).map(function (r) {
           var t = r.v;
-          return [t.title, t.kind === "Compliance" ? "Permit, certificate or test" : "Routine", t.equipName, t.every, t.due, schedState(t.due), t.assignee || "", t.lastDone];
+          return [t.title, typeof maintTypeLabel === "function" ? maintTypeLabel(t.kind) : (t.kind === "Compliance" ? "Permit, certificate or test" : "Routine"), t.equipName, t.every, t.due, schedState(t.due), t.assignee || "", t.lastDone];
         }), "Preventive maintenance and permit renewals");
       list("expense").forEach(function (r) { if (r.v.equipId) spent[r.v.equipId] = (spent[r.v.equipId] || 0) + expTotal(r.v); });
       add("Maintenance", "Equipment", [["Equipment", "text", { w: 28 }], ["Category", "text", { w: 18 }], ["Location", "text", { w: 22 }], ["Condition", "status", { cf: "cond", w: 20 }], ["Facility", "text", { w: 18 }], ["Closes facility", "status"], ["Supplier", "text", { w: 24 }], ["Warranty ends", "date"], ["Last service", "date"], ["Spent", "money", { sum: 1, bar: 1 }]],
