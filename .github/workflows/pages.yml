@@ -37,6 +37,7 @@ jobs:
         run: |
           mkdir site
           cp index.html .nojekyll site/
+          cp -r import-data site/import-data
           cp -r web site/web
           cp -r app-src/build/web site/app
       - uses: actions/upload-pages-artifact@v3
