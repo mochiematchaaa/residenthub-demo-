@@ -552,6 +552,7 @@
           },
           signOut: function () { setSess(null); listeners.forEach(function (f) { f("SIGNED_OUT"); }); return Promise.resolve({}); },
           updateUser: function (p) { var u = cur(); if (u && p.password) { u.password = p.password; save(); } return Promise.resolve({ error: null, data: {} }); },
+          refreshSession: function () { return Promise.resolve({ error: null, data: {} }); },
           onAuthStateChange: function (f) { listeners.push(f); }
         },
         functions: {
@@ -574,9 +575,29 @@
             }
             if (name === "verify-contact") {
               var me = cur();
-              if (b.action === "options") return ok({ email: "ma***@test.com", phone: "+6391*****112", emailReady: !window.__noEmail, smsReady: !window.__noSms });
+              if (b.action === "options") return ok({ email: "ma***@test.com", phone: "+6391*****112", emailReady: !window.__noEmail, smsReady: false });
               if (b.action === "send") { window.__sent = (window.__sent || []).concat(b.channel); return ok({ channel: b.channel, email: "ma***@test.com", phone: "+6391*****112", cooldown: 60 }); }
               if (b.action === "check") { if (b.code === "111111") { me.profile.contact_verified_at = new Date().toISOString(); save(); return ok({ verified: true }); } return bad("That code is not correct."); }
+            }
+            if (name === "admin-contact") {
+              // demo only: the admin changes the sign-in email; the code is always 111111 and is shown on screen
+              var adm = cur();
+              if (!adm || role() !== "admin") return bad("Only the administrator can change these details.");
+              if (b.channel !== "email") return bad("Choose email.");
+              var nv = String(b.value || "").trim().toLowerCase();
+              if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(nv)) return bad("Enter a valid email address.");
+              if (nv === String(adm.email).toLowerCase()) return bad("That is already your email address.");
+              if (db.users.some(function (x) { return x !== adm && String(x.email).toLowerCase() === nv; })) return bad("That email address is already used by another account.");
+              if (b.action === "send") { window.__chg = nv; var at = nv.indexOf("@"); return ok({ ok: true, cooldown: 60, demoCode: "111111", sentTo: nv.slice(0, 2) + "***" + nv.slice(at) }); }
+              if (b.action === "check") {
+                if (window.__chg !== nv) return bad("Ask for a new code first.");
+                if (String(b.code).trim() !== "111111") return bad("That code is not correct.");
+                var old = adm.email; adm.email = nv; adm.profile.email = nv;
+                adm.profile.history = adm.profile.history || [];
+                adm.profile.history.unshift({ at: new Date().toISOString(), field: "Email address", from: old, to: nv });
+                adm.profile.updated_at = new Date().toISOString(); adm.profile.last_change = "Email address";
+                window.__chg = null; save(); return ok({ ok: true, email: nv });
+              }
             }
             if (name === "reset-password") {
               if (b.action === "options") return ok({ emailReady: true, smsReady: false });
