@@ -1,6 +1,6 @@
 /* ADMIN: maintenance management for ResidentHub.
    Adds (1) a preventive maintenance schedule, (2) an equipment list, (3) a maintenance staff list and
-   (4) repair assignment on grievances (who, target date, equipment, note), a Maintenance card on the dashboard and
+   (4) repair assignment on complaints (who, target date, equipment, note), a Maintenance card on the dashboard and
    "Notify residents" for a scheduled job. Everything is saved with put() like the other pages, so it is stored in the
    database (the records table); only the administrator can read these records, so no database change is needed.
    Loaded by admin.html after admin-notify.js.
@@ -421,7 +421,7 @@
     }, true);
   };
 
-  /* ----- repair assignment on grievances ----- */
+  /* ----- repair assignment on complaints ----- */
   window.maintAssignForm = function (id) {
     var row = getRow("grievance", id); if (!row) return;
     var g = row.value;
@@ -456,14 +456,14 @@
     });
   };
 
-  // Resolving a grievance asks what was done and what it cost. The cost becomes an expense linked to the equipment.
+  // Resolving a complaint asks what was done and what it cost. The cost becomes an expense linked to the equipment.
   window.advanceGr = function (id) {
     var row = getRow("grievance", id); if (!row) return;
     var st = Math.min(2, (Number(row.value.stage) || 0) + 1);
     if (st < 2) {
       return act(async function () {
         await put("grievance", id, row.unit, Object.assign({}, row.value, { stage: st }));
-        logAct("Grievance in progress: " + row.value.title, "Requests");
+        logAct("Complaint in progress: " + row.value.title, "Requests");
       });
     }
     openForm({
@@ -482,7 +482,7 @@
           await syncClosures();
         }
         await recordCost(d, "Repair: " + g.title, { category: "Repairs and improvements", equipId: g.equipId, who: g.assignee, link: { equipId: g.equipId || "", grievanceId: Number(id) } });
-        logAct("Grievance resolved: " + g.title + (v.cost ? " (" + money(v.cost) + ")" : ""), "Requests");
+        logAct("Complaint resolved: " + g.title + (v.cost ? " (" + money(v.cost) + ")" : ""), "Requests");
       }
     });
   };
@@ -509,7 +509,7 @@
       return '<div class="card"><div><div style="font:700 17px \'Bricolage Grotesque\',\'Source Sans 3\',sans-serif">' + esc(g.title) + '</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Reported by ' + esc(g.by || r.unit) + '</div><p style="font-size:13px;color:var(--muted);margin:8px 0 0">' + esc(g.body) + "</p></div>" +
         assignBlock(r) + '<div style="display:flex;gap:6px;margin:10px 0">' + steps + "</div>" +
         (s < 2 ? '<div style="display:flex;gap:8px"><button class="btn" style="flex:1" onclick="maintAssignForm(\'' + escAttr(r.id) + '\')">' + (g.assignee ? "Reassign" : "Assign repair") + '</button><button class="btn primary" style="flex:1" onclick="advanceGr(\'' + escAttr(r.id) + '\')">' + (s === 0 ? "Start work" : "Mark resolved") + "</button></div>" : "") + "</div>";
-    }).join("") + "</div>" : emptyCard("No grievances from residents yet.");
+    }).join("") + "</div>" : emptyCard("No complaints from residents yet.");
     return head + docsPart;
   };
 
@@ -533,7 +533,7 @@
   var origView = window.view;
   window.view = function () { return state.view === "maint" ? viewMaint() : origView(); };
 
-  // Adds the Maintenance button to the side menu, right after Grievances.
+  // Adds the Maintenance button to the side menu, right after Complaints.
   var origMount = window.mountApp;
   window.mountApp = function (app, html) {
     var tag = IS_ADMIN ? (dueCount() ? dueCount() + " due" : "") : "";
