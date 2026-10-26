@@ -665,7 +665,7 @@ function renderLogin(msg) {
   var admin = ROLE === "admin";
   authPage(admin ? "Administrator sign-in" : "Sign in to ResidentHub",
     admin ? "CITY RESIDENCES CONDOMINIUM CORP." : "CITY RESIDENCES CONDOMINIUM CORP. · RESIDENT PORTAL",
-    fieldHtml("Email or mobile number", "email", "text", 'autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@email.com or 0917 123 4567"') +
+    fieldHtml("Email address", "email", "text", 'autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="you@email.com"') +
     pwField("Password", "password") +
     '<button class="btn primary" type="submit">Continue</button>' + authErr("loginErr", msg) +
     '<div class="' + AUTH.divider + '"></div><div class="' + AUTH.links + '"><button type="button" class="linklike" id="forgotLink">Forgot password?</button></div>' +
@@ -679,34 +679,14 @@ function renderLogin(msg) {
     e.preventDefault();
     var f = e.target, err = $("#loginErr"), btn = $("button[type=submit]", f);
     var who = f.email.value.trim();
-    if (!who || !f.password.value) { err.textContent = "Enter your email or mobile number and your password."; err.hidden = false; return; }
+    if (!who || !f.password.value) { err.textContent = "Enter your email and your password."; err.hidden = false; return; }
     if (Date.now() < lockedUntil) { err.textContent = "Too many tries. Wait a minute and try again."; err.hidden = false; return; }
-    // No "@" means a mobile number: the sign-in-phone function finds the account and returns the session.
-    var byPhone = !window.RH_DEMO && who.indexOf("@") < 0;
-    var phone = "";
-    if (byPhone) {
-      phone = who.replace(/\D/g, "");
-      if (phone.indexOf("63") === 0 && phone.length === 12) phone = "0" + phone.slice(2);
-      else if (phone.length === 10 && phone.charAt(0) === "9") phone = "0" + phone;
-      if (!/^09\d{9}$/.test(phone)) { err.textContent = "Enter a valid email or mobile number, e.g. 0917 555 0112."; err.hidden = false; return; }
-    }
+    if (who.indexOf("@") < 0) { err.textContent = "Enter a valid email address."; err.hidden = false; return; }
     btn.disabled = true; err.hidden = true;
     var session = null, failMsg = "";
-    if (byPhone) {
-      try {
-        var d = await callFn("sign-in-phone", { phone: phone, password: f.password.value });
-        var s = d.session;
-        if (s && s.access_token && s.refresh_token) {
-          var sr = await sb.auth.setSession({ access_token: s.access_token, refresh_token: s.refresh_token });
-          if (sr.error || !sr.data || !sr.data.session) failMsg = "Could not sign in. Try again.";
-          else session = sr.data.session;
-        } else failMsg = "Could not sign in. Try again.";
-      } catch (ex) { failMsg = ex.message || "Could not sign in. Try again."; }
-    } else {
-      var r = await sb.auth.signInWithPassword({ email: who, password: f.password.value });
-      if (r.error) failMsg = /invalid|credentials/i.test(r.error.message) ? (window.RH_DEMO ? "Wrong email, mobile number or password." : "Wrong email or password.") : errText(r.error);
-      else session = r.data.session;
-    }
+    var r = await sb.auth.signInWithPassword({ email: who, password: f.password.value });
+    if (r.error) failMsg = /invalid|credentials/i.test(r.error.message) ? "Wrong email or password." : errText(r.error);
+    else session = r.data.session;
     if (!session) {
       if (/incorrect|wrong/i.test(failMsg)) { fails++; if (fails >= 5) { lockedUntil = Date.now() + 60000; fails = 0; } }
       err.textContent = failMsg; err.hidden = false; btn.disabled = false;

@@ -539,13 +539,8 @@
           getSession: function () { reload(); var u = cur(); return Promise.resolve({ data: { session: u ? { user: { id: u.id, email: u.email } } : null } }); },
           signInWithPassword: function (c) {
             reload();
-            // demo only: the sign-in box takes an email OR a mobile number (0917 000 0000, +63 917 000 0000, 9170000000 all match)
-            function phoneKey(s) { var d = String(s || "").replace(/\D/g, ""); if (d.indexOf("63") === 0) d = "0" + d.slice(2); if (d.length === 10 && d.charAt(0) === "9") d = "0" + d; return d; }
-            var id = String(c.email || "").trim().toLowerCase(), byPhone = id.indexOf("@") < 0;
-            var u = db.users.filter(function (x) {
-              var who = byPhone ? (phoneKey(id) && phoneKey(x.profile.phone) === phoneKey(id)) : x.email.toLowerCase() === id;
-              return who && x.password === c.password;
-            })[0];
+            var id = String(c.email || "").trim().toLowerCase();
+            var u = db.users.filter(function (x) { return x.email.toLowerCase() === id && x.password === c.password; })[0];
             if (!u) return Promise.resolve({ error: { message: "Invalid login credentials" }, data: {} });
             setSess(u.id);
             return Promise.resolve({ error: null, data: { session: { user: { id: u.id, email: u.email } } } });
@@ -639,7 +634,7 @@
     var d = document.createElement("div"); d.id = "rhDemo";
     d.innerHTML =
       '<div class="box"><p><b>Demo mode.</b> It starts empty so you can try the import. There is no database; what you change stays in this browser only.</p>' +
-      '<p>Demo logins (password <b>Demo@1234</b>), by email or mobile number:<br>Admin: <b>admin@demo.test</b> or <b>0917 000 0000</b><br>Resident: <b>resident@demo.test</b> or <b>0917 000 1108</b> (Unit 3B)</p>' +
+      '<p>Demo logins (password <b>Demo@1234</b>):<br>Admin: <b>admin@demo.test</b><br>Resident: <b>resident@demo.test</b> (Unit 3B)</p>' +
       '<div class="row"><a class="go" href="' + (admin ? "resident.html?as=resident" : "admin.html?as=admin") + '">Open as ' + (admin ? "Resident" : "Admin") + '</a><button onclick="rhDemoReset()">Clear all data</button><button onclick="rhDemoSample()">Load sample data</button><a href="index.html">Demo home</a></div></div>' +
       '<button class="pill" onclick="document.getElementById(\'rhDemo\').classList.toggle(\'open\')">DEMO TOOLS</button>';
     document.body.appendChild(d);

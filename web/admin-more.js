@@ -863,7 +863,7 @@ function phoneForm() {
   var p = DB.profile;
   openForm({
     title: (p.phone ? "Change" : "Add") + " mobile number",
-    intro: "Your mobile number is kept as contact information and can also be used to sign in.",
+    intro: "Your mobile number is kept as contact information only. You sign in with your email address.",
     fields: [{ name: "phone", label: "Mobile number", type: "tel", value: p.phone || "", placeholder: "e.g. 0917 123 4567" }],
     onSubmit: async function (d) {
       var v = (d.phone || "").trim();
