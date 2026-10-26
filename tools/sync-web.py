@@ -19,7 +19,7 @@ for name in ("admin.html", "resident.html"):
     s = open(os.path.join(src, name), encoding="utf-8").read()
     s = re.sub(r'<script src="https://cdn\.jsdelivr\.net/npm/@supabase/[^"]*"></script>\n?', '', s)
     s = re.sub(r'<script src="supabase-config\.js"></script>\n?', '', s)
-    s = s.replace('<script src="shared.js', '<script src="demo-backend.js?v=9"></script>\n<script src="shared.js', 1)
+    s = s.replace('<script src="shared.js', '<script src="demo-backend.js?v=10"></script>\n<script src="shared.js', 1)
     if name == "admin.html":
         s = re.sub(r'(<script src="import-lists\.js[^"]*"></script>)', r'\1\n<script src="export-all.js?v=6"></script>', s, count=1)
     s = s.replace('<title>', '<title>DEMO · ', 1)
