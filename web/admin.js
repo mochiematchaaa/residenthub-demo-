@@ -7,7 +7,7 @@ var state = {
   unitSearch: "", facIdx: 0,
   newAnnTitle: "", newAnnBody: "", newAnnType: "General",
   newPollQ: "", newPollOpts: "", pollFilter: "open",
-  finFilter: "unpaid", payDue: "", payMethod: "", payRef: "", duesDraft: null, motorDraft: null, dailyDraft: null, logPage: 0,
+  finFilter: "unpaid", finQ: "", finPage: 0, payDue: "", payMethod: "", payRef: "", duesDraft: null, motorDraft: null, dailyDraft: null, logPage: 0,
   expMonth: "", expDay: "",
   manage: { name: "", email: "", phone: "", unit: "" }, manageSearch: "", manageErr: ""
 };
@@ -58,7 +58,7 @@ function titles() {
     req: ["Grievances & documents", "Track resident concerns and manage shared files."],
     manage: ["Manage access", "Create resident accounts. Only the administrator can create accounts — there is no public sign-up."],
     ann: ["Announcements", "Publish community announcements and events."],
-    rentals: ["Unit rentals", "Approve what residents declare about their unit, and keep the occupancy registry up to date."],
+    rentals: ["Unit status", "Approve what residents declare about their unit, and keep the occupancy registry up to date."],
     polls: ["Polls & voting", "Ask residents what they think and see the results as votes come in."],
     reports: ["Reports", "Collections, occupancy, dues ageing, facility use and requests at a glance."],
     parking: ["Parking", "Motor parking slots, who has one, and requests waiting for approval."],
@@ -94,7 +94,7 @@ function render() {
       '<div class="side-label">General</div><nav>' + navBtn("home", "Dashboard") + navBtn("units", "Units") + navBtn("fac", "Facility") + navBtn("ann", "Announcements") + navBtn("polls", "Polls") + "</nav>" +
       '<div class="side-label">Tools</div><nav>' + navBtn("fin", "Finance") +
       '<button type="button" title="Expenses" class="' + (state.view === "expenses" ? "active" : "") + '" onclick="set({view:\'expenses\'})">' + icon("fin") + "<span>Expenses</span></button>" +
-      navBtn("reports", "Reports") + navBtn("req", "Grievances") + navBtn("parking", "Parking", parkingFreeTag()) + navBtn("rentals", "Rentals") + "</nav>" +
+      navBtn("reports", "Reports") + navBtn("req", "Grievances") + navBtn("parking", "Parking", parkingFreeTag()) + navBtn("rentals", "Unit status") + "</nav>" +
       '<div class="side-label">Admin</div><nav>' + navBtn("log", "Activity log") + navBtn("manage", "Access") + navBtn("settings", "Settings") + "</nav>" +
       '<div class="side-foot"><button class="side-user" title="Open my profile" onclick="set({view:\'profile\'})"><span class="avatar">' + esc(initials(adminName())) + "</span><span><b>" + esc(adminName()) + "</b><small>Administrator</small></span></button>" +
       '<button class="side-out" onclick="doLogout()">' + icon("logout") + "<span>Log out</span></button></div></aside>" +
@@ -164,7 +164,7 @@ function viewHome() {
     '<div class="sc-grid">' +
     summaryCard("yellow", "Community", [[units, "Units", "units"], [residentCount(), "Residents", "manage"], [list("doc").length, "Documents", "req"]], "cross") +
     summaryCard("pink", "Finance", [[peso(monthEarnings()), "Earnings this month", "fin"], [c.unpaid, "Unpaid dues", "fin"]], "heart", bars ? '<div class="bars" title="One bar per recent charge. Solid bars are paid.">' + bars + "</div>" : "") +
-    summaryCard("green", "Needs attention", [[c.grievances, "Grievances", "req"], [c.bookings, "Bookings", "fac"], [c.rentals, "Rentals to review", "rentals"]], "triangle") +
+    summaryCard("green", "Needs attention", [[c.grievances, "Grievances", "req"], [c.bookings, "Bookings", "fac"], [c.rentals, "Unit status to review", "rentals"]], "triangle") +
     summaryCard("blue", "Community life", [[openPolls, "Open polls", "polls"], [used + "/" + slots.length, "Parking used", "parking"]], "burst") +
     "</div>" +
     '<div class="pills-row">' + quick.map(function (q) { return '<button onclick="set({view:\'' + q[1] + '\'})">' + q[0] + "</button>"; }).join("") + "</div>" +
@@ -211,8 +211,6 @@ function viewUnits() {
     '<p>Search any record information. Combine words, such as “Reyes owner” or “vacant overdue”.</p></div>' +
     '<div class="filters unit-actions"><span role="status" style="margin-right:auto;font-size:13px;color:var(--muted)">' + rows.length + " matching " + (rows.length === 1 ? "unit" : "units") + "</span>" +
     '<button class="btn primary" onclick="unitForm(null)">+ Add unit</button>' +
-    '<label class="btn file-import-btn">Import CSV<input type="file" accept=".csv,text/csv" onchange="importUnits(this)" hidden></label>' +
-    '<button class="btn" onclick="unitsTemplate()">Template</button>' +
     '<button class="btn" onclick="exportUnits()">Export CSV</button></div>' +
     '<div class="card" style="padding:0;overflow:hidden">' + tableRows(html, ["UNIT", "RESIDENT / OWNER", "OCCUPANCY", "STATUS", "CONTACT", "USAGE", "BALANCE", ""], list("unit").length ? "No units match your search." : "No units yet. Tap “Add unit” or import a CSV.") + "</div>";
 }
