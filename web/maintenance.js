@@ -1,19 +1,21 @@
-/* DEMO ONLY: maintenance management for ResidentHub.
+/* ADMIN: maintenance management for ResidentHub.
    Adds (1) a preventive maintenance schedule, (2) an equipment list, (3) a maintenance staff list and
-   (4) repair assignment on grievances (who, target date, equipment, note).
-   Loaded by demo/admin.html and demo/resident.html after the real scripts. The real website and the real
-   database do not load this file, so nothing here touches production.
-   Data kinds (all stored in the demo's in-memory records table):
+   (4) repair assignment on grievances (who, target date, equipment, note), a Maintenance card on the dashboard and
+   "Notify residents" for a scheduled job. Everything is saved with put() like the other pages, so it is stored in the
+   database (the records table); only the administrator can read these records, so no database change is needed.
+   Loaded by admin.html after admin-notify.js.
+   Data kinds:
      staff     unit "__admin"  {id, name, role, phone}
      equipment unit "__admin"  {id, name, category, location, status, lastService}
      mtask     unit ""         {id, title, equipId, equipName, every, days, due, staffId, assignee, lastDone, history[]}
      mclosure  unit ""         {id: facility name, facility, equipName, reason}  (a facility closed for maintenance)
-     mtype     unit "__admin"  {id, name}  (a task type the administrator created; a task's kind holds the type name)
+     mtype     unit "__admin"  {id, name}  (a task type the administrator created; a task's kind holds the name)
+     mnotice   unit "__admin"  (a log of notices sent for maintenance jobs)
      grievance (existing)      + staffId, assignee, target, equipId, equipName, notes, priority, resolvedOn, cost, completion
      expense   (existing)      + equipId, grievanceId, taskId (repair and maintenance spending) */
 (function () {
-  if (!window.RH_DEMO) return;
-  var IS_ADMIN = window.RH_ROLE === "admin";
+  if (window.RH_ROLE !== "admin") return;
+  var IS_ADMIN = true;
 
   var FREQ = [["Weekly", 7], ["Every 2 weeks", 14], ["Monthly", 30], ["Every 3 months", 90], ["Every 6 months", 180], ["Yearly", 365]];
   var EQ_STATUS = ["Working", "Needs repair", "Under maintenance"];
@@ -122,7 +124,7 @@
       '<p class="hint" style="margin:0 0 14px">' + (rs.avg == null ? "No finished repairs yet." : "Average repair time " + (rs.avg < 1 ? "under a day" : rs.avg.toFixed(1) + " days") + " across " + plural(rs.n, "finished repair") + ".") + " Maintenance spending this year: <b>" + money(rs.year) + "</b>." + (closed.length ? " Closed to bookings now: <b>" + closed.map(function (c) { return esc(c.v.facility); }).join(", ") + "</b>." : "") + "</p>" +
       '<div class="filters" style="margin-bottom:14px">' + tabs.map(function (t) {
         return '<button class="' + (tab === t[0] ? "active" : "") + '" onclick="set({mtab:\'' + t[0] + '\'})">' + t[1] + "</button>";
-      }).join("") + "</div>" + (tab === "equip" ? maintEquip(eq) : tab === "staff" ? maintStaff() : maintSched(ts, kind));
+      }).join("") + "</div>" + (tab === "equip" ? maintEquip(eq) : tab === "staff" ? maintStaff() : maintSched(ts, kind) + recentNotices());
   }
 
   function maintSched(ts, kind) {
@@ -289,26 +291,82 @@
     });
   };
 
-  // Posts an announcement to every resident about a scheduled job.
+  // Notify residents: choose everyone or chosen residents, and whether to also text their mobile numbers.
+  // The notice is an announcement; a notice for chosen residents is only readable by the units that were chosen.
+  function residentsList() {
+    return (DB.accounts || []).filter(function (a) { return a.role !== "admin" && !a.suspended; })
+      .sort(function (x, y) { return String(x.unit || "").localeCompare(String(y.unit || ""), undefined, { numeric: true }) || String(x.name).localeCompare(String(y.name)); });
+  }
+  function recentNotices() {
+    var ns = list("mnotice").sort(function (a, b) { return b.v.at - a.v.at; }).slice(0, 5);
+    if (!ns.length) return "";
+    return '<div class="card" style="margin-top:16px;padding:0;overflow:hidden"><div style="padding:14px 18px"><h3 style="margin:0;font-size:17px">Recent notices</h3><p class="hint" style="margin:4px 0 0">Who each notice was sent to. To text a notice too, copy the numbers shown after sending.</p></div>' +
+      tableRows(ns.map(function (r) {
+        var n = r.v;
+        return "<tr><td><b>" + esc(n.title) + '</b><div style="font-size:12px;color:var(--muted)">' + esc(new Date(n.at).toLocaleString()) + "</div></td><td>" + esc(n.to) + "</td><td>" +
+          (n.channel === "sms" ? "Dashboard, app and " + esc(plural(n.smsSent, "text message")) + (n.noPhone ? ' <span class="chip warn">' + esc(plural(n.noPhone, "resident")) + " without a mobile number</span>" : "") : "Dashboard and app only") + "</td></tr>";
+      }), ["NOTICE", "SENT TO", "HOW"], "") + "</div>";
+  }
   window.maintNotify = function (id) {
     var row = getRow("mtask", id); if (!row) return;
-    var t = row.value;
+    var t = row.value, res = residentsList(), picked = {};
     openForm({
       title: "Notify residents",
-      intro: "This posts an announcement that every resident can read.",
-      submit: "Post notice",
+      intro: "Choose who gets this notice and how. It appears under Announcements in their dashboard and app.",
+      submit: "Send notice",
       fields: [
+        { name: "audience", label: "Send to", type: "select", options: [["all", "All residents (" + res.length + ")"], ["pick", "Choose residents…"]], value: "all" },
+        { name: "channel", label: "How", type: "select", options: [["sms", "Dashboard, app and text message (numbers are shown after sending)"], ["app", "Dashboard and app only"]], value: "sms" },
         { name: "title", label: "Title", value: "Maintenance notice: " + t.title },
         { name: "body", label: "Message", type: "textarea", value: "Scheduled on " + fd(t.due) + ": " + t.title + (t.equipName ? " (" + t.equipName + ")" : "") + ". Some areas may be briefly unavailable. Thank you for your understanding." }
       ],
       onSubmit: async function (d) {
         if (!d.title) return { error: "Enter a title." };
-        var nid = nextId();
-        await put("announcement", nid, "", { id: nid, title: d.title, body: d.body || "—", date: shortDate(new Date()), status: "Published", type: "Maintenance" });
-        logAct("Maintenance notice posted: " + d.title, "Announcements");
-        toast("Notice posted for all residents.");
+        var targets = d.audience === "all" ? res : res.filter(function (a) { return picked[a.id]; });
+        if (!targets.length) return { error: "Choose at least one resident." };
+        var units = null;
+        if (d.audience !== "all") { units = []; targets.forEach(function (a) { if (a.unit && units.indexOf(a.unit) < 0) units.push(a.unit); }); }
+        var nid = nextId(), v = { id: nid, title: d.title, body: d.body || "—", date: shortDate(new Date()), status: "Published", type: "Maintenance" };
+        if (units) v.units = units;
+        await put("announcement", nid, "", v);
+        var sms = d.channel === "sms" ? targets.filter(function (a) { return a.phone; }) : [], noPhone = d.channel === "sms" ? targets.length - sms.length : 0;
+        var to = units ? plural(targets.length, "resident") + " in " + plural(units.length, "unit") : "All residents (" + targets.length + ")";
+        var rid = String(nextId());
+        await put("mnotice", rid, "__admin", { id: rid, title: d.title, at: Date.now(), to: to, count: targets.length, channel: d.channel, smsSent: sms.length, noPhone: noPhone });
+        logAct("Maintenance notice sent to " + to + (d.channel === "sms" ? ", " + plural(sms.length, "text message") : "") + ": " + d.title, "Announcements");
+        toast("Notice sent to " + to + ".");
+        if (d.channel === "sms" && window.rhTextForm) setTimeout(function () { window.rhTextForm(sms, noPhone, d.title, d.body); }, 250);
       }
     });
+    var form = document.getElementById("rhForm"); if (!form) return;
+    var aud = form.querySelector('select[name="audience"]'), chn = form.querySelector('select[name="channel"]'), lab = aud.parentNode;
+    var box = document.createElement("div"); box.style.cssText = "display:none;border:1px solid #d9d2c3;border-radius:12px;padding:8px;background:#fff";
+    box.innerHTML = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px"><input type="search" id="mtPickQ" placeholder="Search name or unit" style="flex:1;min-width:140px;height:34px;border:1px solid #d9d2c3;border-radius:999px;padding:0 12px;font-size:13px">' +
+      '<button type="button" class="btn" id="mtPickAll" style="min-height:34px;padding:0 10px;font-size:12px">Select shown</button><button type="button" class="btn" id="mtPickNone" style="min-height:34px;padding:0 10px;font-size:12px">Clear</button></div>' +
+      '<div id="mtPickList" style="max-height:220px;overflow:auto"></div>';
+    lab.parentNode.insertBefore(box, lab.nextSibling);
+    var info = document.createElement("div"); info.className = "hint"; info.style.cssText = "margin:0;font-size:13px"; box.parentNode.insertBefore(info, chn.parentNode.nextSibling);
+    var qEl = box.querySelector("#mtPickQ"), listEl = box.querySelector("#mtPickList");
+    function shown() { var q = qEl.value.trim().toLowerCase(); return res.filter(function (a) { return !q || (a.name + " " + (a.unit || "")).toLowerCase().indexOf(q) >= 0; }); }
+    function summary() {
+      var tg = aud.value === "all" ? res : res.filter(function (a) { return picked[a.id]; }), ph = tg.filter(function (a) { return a.phone; }).length;
+      info.innerHTML = "Will reach <b>" + plural(tg.length, "resident") + "</b>" + (chn.value === "sms" ? " on the dashboard and in the app, and by text message at the same time. <b>" + ph + "</b> have a mobile number to text" + (tg.length - ph ? ' <span class="chip warn">' + (tg.length - ph) + " have no mobile number</span>" : "") + "." : ".");
+    }
+    function draw() {
+      listEl.innerHTML = shown().map(function (a) {
+        return '<label style="display:flex;gap:10px;align-items:center;padding:6px 4px;cursor:pointer;border-radius:8px"><input type="checkbox" data-id="' + escAttr(a.id) + '"' + (picked[a.id] ? " checked" : "") + '><span style="font-size:13px;line-height:1.35"><b>' + esc(a.name) + "</b> · " + esc(a.unit || "—") +
+          '<br><span style="color:var(--muted)">' + (a.phone ? esc(a.phone) : "No mobile number") + "</span></span></label>";
+      }).join("") || '<div class="hint" style="padding:8px">No resident matches.</div>';
+      summary();
+    }
+    listEl.addEventListener("change", function (e) { var id = e.target.getAttribute("data-id"); if (id) { picked[id] = e.target.checked; summary(); } });
+    qEl.addEventListener("input", draw);
+    qEl.addEventListener("keydown", function (e) { if (e.key === "Enter") e.preventDefault(); });
+    box.querySelector("#mtPickAll").addEventListener("click", function () { shown().forEach(function (a) { picked[a.id] = true; }); draw(); });
+    box.querySelector("#mtPickNone").addEventListener("click", function () { picked = {}; draw(); });
+    aud.addEventListener("change", function () { box.style.display = aud.value === "pick" ? "block" : "none"; summary(); });
+    chn.addEventListener("change", summary);
+    draw();
   };
 
   window.maintDelete = function (kind, id) {
@@ -456,46 +514,6 @@
   };
 
   /* ==========================================================================
-     RESIDENT
-     ========================================================================== */
-  function viewMaintRes() {
-    var ts = tasks(), upcoming = ts.filter(function (r) { var n = daysTo(r.v.due); return n != null && n <= 30; });
-    var rows = upcoming.map(function (r) {
-      var t = r.v, st = taskState(t);
-      return '<div style="display:flex;align-items:center;gap:12px;padding:12px 22px;border-top:1px solid var(--border2);flex-wrap:wrap"><div style="flex:1 1 220px;min-width:0"><b>' + esc(t.title) + '</b><div style="font-size:13px;color:var(--muted)">' + esc(t.equipName || "") + " · " + esc(t.every) + '</div></div><span style="color:var(--muted);font-size:14px">' + esc(fd(t.due)) + '</span><span class="chip ' + st[1] + '">' + st[0] + "</span></div>";
-    }).join("");
-    var done = ts.filter(function (r) { return r.v.lastDone; }).sort(function (a, b) { return String(b.v.lastDone).localeCompare(String(a.v.lastDone)); }).slice(0, 5);
-    var mine = newest(list("grievance")).filter(function (r) { return r.unit === myUnit() && !(Number(r.v.stage) >= 2) && r.v.assignee; });
-    var closed = list("mclosure").map(function (r) {
-      return '<div class="card" style="background:var(--warn-bg);color:var(--warn-fg);margin-bottom:12px"><b>' + esc(r.v.facility) + ' is closed for maintenance.</b> ' + esc(r.v.equipName) + " is " + esc(String(r.v.reason).toLowerCase()) + ". It cannot be booked until it is working again.</div>";
-    }).join("");
-    return closed + '<div class="card" style="padding:0;overflow:hidden"><div style="padding:16px 22px"><h2 style="font-size:19px;margin-bottom:2px">Coming up in the next 30 days</h2><p style="margin:0;font-size:13px;color:var(--muted)">Routine checks and servicing planned by the office. Some work may cause short interruptions.</p></div>' +
-      (rows || '<div style="padding:22px;text-align:center;color:var(--muted);border-top:1px solid var(--border2)">Nothing is scheduled in the next 30 days.</div>') + "</div>" +
-      '<div class="two-col-e" style="margin-top:16px"><div class="card"><h2 style="font-size:19px;margin-bottom:6px">Recently completed</h2>' + (done.map(function (r) {
-        return '<div style="padding:10px 0;border-top:1px solid var(--border2)"><b>' + esc(r.v.title) + '</b><div style="font-size:13px;color:var(--muted)">' + esc(fd(r.v.lastDone)) + (r.v.assignee ? " · " + esc(r.v.assignee) : "") + "</div></div>";
-      }).join("") || '<p class="empty">Nothing yet.</p>') + "</div>" +
-      '<div class="card"><h2 style="font-size:19px;margin-bottom:6px">Your repair requests</h2>' + (mine.map(function (r) {
-        return '<div style="padding:10px 0;border-top:1px solid var(--border2)"><b>' + esc(r.v.title) + '</b><div style="font-size:13px;color:var(--muted)">Assigned to ' + esc(r.v.assignee) + (r.v.target ? " · target " + esc(fd(r.v.target)) : "") + "</div></div>";
-      }).join("") || '<p style="margin:0;font-size:14px;color:var(--muted)">No repair is assigned yet for your unit.</p>') +
-      '<button class="btn" style="margin-top:12px" onclick="set({view:\'gr\'})">Report a problem</button></div></div>';
-  }
-
-  if (!IS_ADMIN) {
-    window.viewGr = function () {
-      var all = newest(list("grievance")).filter(function (r) { return r.unit === myUnit(); }), names = ["Open", "In progress", "Resolved"];
-      return '<div class="two-col-e"><div class="card"><h2 style="font-size:19px;margin-bottom:4px">Submit a grievance</h2><p style="margin:0 0 12px;font-size:13px;color:var(--muted)">The association will follow up here once reviewed.</p>' +
-        '<div style="display:flex;flex-direction:column;gap:10px"><label>Subject<input id="grTitle" type="text" placeholder="e.g. Leaking pipe in the hallway"></label><label>Details<textarea id="grBody" rows="3" placeholder="Describe the concern"></textarea></label><button class="btn primary" style="margin-top:4px" onclick="submitGr()">Submit grievance</button></div></div>' +
-        '<div class="card"><h2 style="font-size:19px;margin-bottom:6px">My grievances</h2>' + (all.length === 0 ? '<div style="padding:16px;border:2px dashed #D8CCB1;border-radius:12px;text-align:center;font-size:14px;color:var(--muted)">No grievances submitted yet.</div>' :
-          all.map(function (r) {
-            var g = r.v, s = Math.min(2, Math.max(0, Number(g.stage) || 0));
-            var info = g.assignee ? '<div style="margin-top:8px;font-size:13px;line-height:1.5">Assigned to <b>' + esc(g.assignee) + "</b>" + (g.target ? " · target " + esc(fd(g.target)) : "") +
-              (g.equipName ? '<div style="color:var(--muted)">Related to: ' + esc(g.equipName) + "</div>" : "") + (g.notes && s < 2 ? '<div style="color:var(--muted)">Update from the office: ' + esc(g.notes) + "</div>" : "") + (s === 2 && g.completion ? '<div style="color:var(--muted)">Completed' + (g.resolvedOn ? " " + esc(fd(g.resolvedOn)) : "") + ": " + esc(g.completion) + "</div>" : "") + "</div>" : "";
-            return '<div style="padding:12px 0;border-top:1px solid var(--border2)"><div style="font-weight:700;font-size:15px">' + esc(g.title) + '</div><div style="font-size:13px;color:var(--muted);margin:2px 0 6px">' + esc(g.body) + '</div><span class="chip ' + (s === 2 ? "good" : s === 1 ? "warn" : "info") + '">' + names[s] + "</span>" + info + "</div>";
-          }).join("")) + "</div></div>";
-    };
-  }
-
-  /* ==========================================================================
      Hooks into the real pages (nothing is edited in the real files)
      ========================================================================== */
   // A facility with equipment that is not working (and set to close) cannot be booked.
@@ -505,25 +523,15 @@
     if (st === "open") { var a = facilities()[f]; if (a && closureOf(a.name)) return "closed"; }
     return st;
   };
-  var origBook = window.viewBook;
-  if (origBook) {
-    window.viewBook = function () {
-      var fl = facilities(), cur = fl[Math.min(state.facIdx || 0, fl.length - 1)], c = cur && closureOf(cur.name), h = origBook();
-      if (!c) return h;
-      return '<div class="card" style="background:var(--warn-bg);color:var(--warn-fg);margin-bottom:12px"><b>' + esc(c.facility) + " is closed for maintenance.</b> " + esc(c.equipName) + " is " + esc(String(c.reason).toLowerCase()) + ". Booking is paused until it is working again.</div>" + h;
-    };
-  }
-
   var origTitles = window.titles;
   window.titles = function () {
     if (state.view === "maint") {
-      return IS_ADMIN ? ["Maintenance", "Preventive maintenance schedule, equipment, and the staff who do the work."]
-        : ["Maintenance", "What the office is servicing, and the status of your repair requests."];
+      return ["Maintenance", "Preventive maintenance schedule, equipment, and the staff who do the work."];
     }
     return origTitles();
   };
   var origView = window.view;
-  window.view = function () { return state.view === "maint" ? (IS_ADMIN ? viewMaint() : viewMaintRes()) : origView(); };
+  window.view = function () { return state.view === "maint" ? viewMaint() : origView(); };
 
   // Adds the Maintenance button to the side menu, right after Grievances.
   var origMount = window.mountApp;
@@ -609,3 +617,4 @@
     };
   }
 })();
+

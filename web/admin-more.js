@@ -4,13 +4,37 @@
 /* ==========================================================================
    Finance
    ========================================================================== */
+var FIN_PAGE = 10;
+// Which payment (method, reference, date) settled each paid charge: charges and payments of the same unit, text and amount are paired oldest to oldest.
+function paidThrough(dues, pays) {
+  var byKey = {}, out = {};
+  pays.slice().sort(function (a, b) { return Number(a.id) - Number(b.id); }).forEach(function (r) { var k = r.v.unit + "|" + r.v.forText + "|" + Number(r.v.amount); (byKey[k] = byKey[k] || []).push(r.v); });
+  dues.filter(function (d) { return d.v.paid; }).sort(function (a, b) { return Number(a.id) - Number(b.id); }).forEach(function (d) {
+    var k = d.v.unit + "|" + d.v.note + "|" + Number(d.v.amount), p = (byKey[k] || []).shift();
+    if (p) out[d.id] = p;
+  });
+  return out;
+}
+// The "Paid through" cell: the type of payment the resident used, with its reference number and date.
+function paidCell(p, paid) {
+  if (!paid) return '<span style="color:var(--muted)">—</span>';
+  if (!p) return '<span style="color:var(--muted)">Not recorded</span>';
+  return '<b>' + esc(p.method || "—") + '</b><div style="font-size:12px;color:var(--muted)">' + (p.reference && p.reference !== "—" ? "Ref " + esc(p.reference) + " · " : "") + esc(p.date || "") + "</div>";
+}
+// Goes to another page of the charges list.
+function goFinPage(n) { state.finPage = Math.max(0, n); render(); }
 function viewFin() {
   var dues = newest(list("due")), open = dues.filter(function (d) { return !d.v.paid; });
   var outstanding = open.reduce(function (s, d) { return s + Number(d.v.amount || 0); }, 0);
   var unpaidUnits = {}; open.forEach(function (d) { unpaidUnits[d.v.unit] = 1; });
   var pays = newest(list("payment"));
   var stats = [["Collected this month", peso(monthEarnings())], ["Outstanding", peso(outstanding)], ["Units with unpaid dues", String(Object.keys(unpaidUnits).length)], ["Payments recorded", String(pays.length)]];
-  var rows = (state.finFilter === "unpaid" ? open : dues);
+  var fq = (state.finQ || "").trim().toLowerCase();
+  var paidDues = dues.filter(function (d) { return d.v.paid; });
+  var paidInfo = paidThrough(dues, pays);
+  var shownDues = (state.finFilter === "unpaid" ? open : state.finFilter === "paid" ? paidDues : dues).filter(function (d) { return !fq || (d.v.unit + " " + d.v.note + " " + (d.v.name || "")).toLowerCase().indexOf(fq) >= 0; });
+  var finPages = Math.max(1, Math.ceil(shownDues.length / FIN_PAGE)), finPage = Math.min(Math.max(0, state.finPage || 0), finPages - 1);
+  var rows = shownDues.slice(finPage * FIN_PAGE, (finPage + 1) * FIN_PAGE);
   var year = new Date().getFullYear();
   var perMonth = MONTHS.map(function (m, i) {
     var total = vals("payment").filter(function (p) { return monthOf(p.date) === year * 12 + i; }).reduce(function (s, p) { return s + Number(p.amount || 0); }, 0);
@@ -31,13 +55,14 @@ function viewFin() {
     '<div class="fin-grid"><div class="fin-main">' +
     '<div class="card"><h2>Collection summary</h2><p class="hint">Money collected each month of ' + year + ", in pesos.</p>" + barChart(perMonth, "₱") + "</div>" +
     '<div class="card" style="padding:0;overflow:hidden"><div class="filters" style="padding:14px 18px">' +
-    '<button class="' + (state.finFilter === "unpaid" ? "active" : "") + '" onclick="set({finFilter:\'unpaid\'})">Unpaid (' + open.length + ')</button><button class="' + (state.finFilter === "all" ? "active" : "") + '" onclick="set({finFilter:\'all\'})">All (' + dues.length + ')</button></div>' +
+    '<button class="' + (state.finFilter === "unpaid" ? "active" : "") + '" onclick="set({finFilter:\'unpaid\',finPage:0})">Unpaid (' + open.length + ')</button><button class="' + (state.finFilter === "paid" ? "active" : "") + '" onclick="set({finFilter:\'paid\',finPage:0})">Paid (' + paidDues.length + ')</button><button class="' + (state.finFilter === "all" ? "active" : "") + '" onclick="set({finFilter:\'all\',finPage:0})">All (' + dues.length + ')</button>' +
+    '<input type="search" id="finSearchInput" value="' + escAttr(state.finQ || "") + '" oninput="set({finQ:this.value,finPage:0})" placeholder="Search unit or description..." autocomplete="off" class="fin-search"></div>' +
     tableRows(rows.map(function (r) {
       var d = r.v;
-      return '<tr><td style="font-weight:700">' + esc(d.unit) + "</td><td>" + esc(d.note) + '</td><td style="color:var(--muted)">' + esc(d.dueDate || "On receipt") + '</td><td style="font-weight:700">' + peso(Number(d.amount)) + "</td><td>" +
+      return '<tr><td style="font-weight:700">' + esc(d.unit) + "</td><td>" + esc(d.note) + '</td><td style="color:var(--muted)">' + esc(d.dueDate || "On receipt") + '</td><td style="font-weight:700">' + peso(Number(d.amount)) + "</td><td>" + paidCell(paidInfo[r.id], d.paid) + "</td><td>" +
         (d.paid ? '<span class="chip good">Paid</span>' : '<button class="btn" onclick="chooseDue(\'' + escAttr(r.id) + '\')">Collect</button> ' + (isOverdue(d) ? '<span class="chip bad">Overdue</span>' : "")) +
         ' <button class="btn" style="min-height:32px;padding:0 10px;font-size:12px;color:#A02B1D" onclick="deleteDue(\'' + escAttr(r.id) + '\')">Delete</button></td></tr>';
-    }), ["UNIT", "FOR", "DUE", "AMOUNT", "STATUS"], dues.length ? "Nothing unpaid. Everyone is up to date." : "No charges yet. Use “Bill monthly dues” or “Add charge”.") + "</div>" +
+    }), ["UNIT", "FOR", "DUE", "AMOUNT", "PAID THROUGH", "STATUS"], dues.length ? (fq ? "No charge matches your search." : "Nothing unpaid. Everyone is up to date.") : "No charges yet. Use “Bill monthly dues” or “Add charge”.") + (shownDues.length > FIN_PAGE ? pagerHtml(shownDues.length, finPage, FIN_PAGE, "goFinPage") : "") + "</div>" +
     '<div class="card" style="display:flex;flex-direction:column;gap:10px"><h2>Dues settings</h2><p class="hint" style="margin:0">The monthly amount is what “Bill monthly dues” charges every unit.</p>' +
     '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap"><label class="fl" style="width:180px">Monthly dues per unit (₱)<input id="duesRate" type="number" min="0" step="0.01" value="' + escAttr(state.duesDraft != null ? state.duesDraft : (rate || "")) + '" oninput="state.duesDraft=this.value"></label><button class="btn primary" onclick="saveRate(\'dues_rate\',\'duesDraft\',\'Monthly dues\')">Save amount</button>' +
     '<span style="font-size:13px;color:var(--muted)">Current: <b>' + (rate ? peso(rate) + " per unit" : "not set yet") + '</b></span></div>' +
@@ -58,7 +83,7 @@ function viewFin() {
     '<div class="card" style="display:flex;flex-direction:column;gap:8px"><h2>Receipts</h2>' +
     (pays.slice(0, 6).map(function (r) {
       var p = r.v;
-      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--border2)"><span style="font-size:13px"><b>' + esc(p.receiptNo) + "</b> · " + esc(p.unit) + " · " + peso(Number(p.amount)) + '</span><button class="btn" style="min-height:30px;padding:0 10px;font-size:12px" onclick="receiptFor(\'payment\',\'' + escAttr(r.id) + '\')">Receipt</button></div>';
+      return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-top:1px solid var(--border2)"><span style="font-size:13px"><b>' + esc(p.receiptNo) + "</b> · " + esc(p.unit) + " · " + peso(Number(p.amount)) + '<br><span style="color:var(--muted);font-size:12px">' + esc(p.method || "") + " · " + esc(p.date || "") + '</span></span><button class="btn" style="min-height:30px;padding:0 10px;font-size:12px" onclick="receiptFor(\'payment\',\'' + escAttr(r.id) + '\')">Receipt</button></div>';
     }).join("") || '<p class="hint" style="margin:0">No payments recorded yet.</p>') +
     '<button class="btn" onclick="exportPayments()">Export payments (.csv)</button><button class="btn" onclick="exportDues()">Export dues (.csv)</button></div></aside></div>';
 }
@@ -561,19 +586,25 @@ function declineParking(unit) {
 /* ==========================================================================
    Rentals and unit usage
    ========================================================================== */
+function rentalCards(list) {
+  return list.map(function (r) {
+      var u = r.v, chip = u.usageStatus === "approved" ? '<span class="chip good">Approved</span>' : u.usageStatus === "rejected" ? '<span class="chip bad">Rejected</span>' : '<span class="chip warn">Pending review</span>';
+      return '<div class="card rental-card' + (u.usageStatus === "pending" ? " pending" : "") + '" style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><div><span style="font-weight:700;font-size:16px">' + esc(r.id) + '</span><span style="color:var(--muted);font-size:13px"> · ' + esc(u.name || "—") + '</span></div><span style="display:flex;gap:8px;align-items:center">' + chip + '<span class="chip ' + usageChipClass(u.usage) + '">' + esc(usageLabel(u.usage)) + "</span></span></div>" +
+        (usageInfoRows(u).length ? '<div class="kv detail-kv">' + usageInfoRows(u).map(function (x) { return "<span>" + esc(x[0]) + "</span><b>" + esc(x[1]) + "</b>"; }).join("") + "</div>" : '<div style="font-size:13px;color:var(--muted)">' + esc(u.statusNote || "No additional details provided.") + "</div>") + (u.usageRemark ? '<div style="font-size:12px;color:#A02B1D">Your note to the resident: “' + esc(u.usageRemark) + "”</div>" : "") +
+        (u.usageStatus === "pending" || !u.usageStatus ? '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;border-top:1px solid var(--border2);padding-top:10px"><div class="field" style="flex-grow:1;min-width:200px"><label style="font-size:12px;font-weight:700;color:var(--muted)">Note (optional, shown to resident if rejected)</label><input id="rentalNote-' + escAttr(r.id.replace(/\s+/g, "")) + '" placeholder="e.g. Please submit your barangay business permit"></div><button class="btn primary" onclick="rentalAct(\'' + escAttr(r.id) + '\',\'approved\')">Approve</button><button class="btn" onclick="rentalAct(\'' + escAttr(r.id) + '\',\'rejected\')">Reject</button></div>' : "") + "</div>";
+  }).join("");
+}
 function viewRentals() {
   var units = sortedUnits(), flagged = units.filter(function (r) { return needsApproval(r.v); });
+  // pending reviews first, then the rest in unit order
+  var waiting = flagged.filter(function (r) { return r.v.usageStatus === "pending"; }), decided = flagged.filter(function (r) { return r.v.usageStatus !== "pending"; });
   var pending = flagged.filter(function (r) { return r.v.usageStatus === "pending"; }).length;
   var approved = flagged.filter(function (r) { return r.v.usageStatus === "approved"; }).length;
   var rejected = flagged.filter(function (r) { return r.v.usageStatus === "rejected"; }).length;
   return '<div class="grid cols-3">' + statCard("Awaiting review", String(pending)) + statCard("Approved", String(approved)) + statCard("Rejected", String(rejected)) + "</div>" +
-    '<div class="card" style="margin-top:16px;font-size:13px;color:var(--muted)">Residents declare this themselves under their portal\'s <b>Unit Rental</b> page. Short-term rentals (e.g. Airbnb) and home-based businesses need your review here before they are marked Approved — owner-occupied units and long-term tenant leases do not need approval.</div>' +
-    '<div style="display:flex;flex-direction:column;gap:12px;margin-top:16px">' + (flagged.length === 0 ? emptyCard("No units have declared a short-term rental or business use yet.") : flagged.map(function (r) {
-      var u = r.v, chip = u.usageStatus === "approved" ? '<span class="chip good">Approved</span>' : u.usageStatus === "rejected" ? '<span class="chip bad">Rejected</span>' : '<span class="chip warn">Pending review</span>';
-      return '<div class="card" style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap"><div><span style="font-weight:700;font-size:16px">' + esc(r.id) + '</span><span style="color:var(--muted);font-size:13px"> · ' + esc(u.name || "—") + '</span></div><span style="display:flex;gap:8px;align-items:center">' + chip + '<span class="chip ' + usageChipClass(u.usage) + '">' + esc(usageLabel(u.usage)) + "</span></span></div>" +
-        (usageInfoRows(u).length ? '<div class="kv detail-kv">' + usageInfoRows(u).map(function (x) { return "<span>" + esc(x[0]) + "</span><b>" + esc(x[1]) + "</b>"; }).join("") + "</div>" : '<div style="font-size:13px;color:var(--muted)">' + esc(u.statusNote || "No additional details provided.") + "</div>") + (u.usageRemark ? '<div style="font-size:12px;color:#A02B1D">Your note to the resident: “' + esc(u.usageRemark) + "”</div>" : "") +
-        (u.usageStatus === "pending" || !u.usageStatus ? '<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;border-top:1px solid var(--border2);padding-top:10px"><div class="field" style="flex-grow:1;min-width:200px"><label style="font-size:12px;font-weight:700;color:var(--muted)">Note (optional, shown to resident if rejected)</label><input id="rentalNote-' + escAttr(r.id.replace(/\s+/g, "")) + '" placeholder="e.g. Please submit your barangay business permit"></div><button class="btn primary" onclick="rentalAct(\'' + escAttr(r.id) + '\',\'approved\')">Approve</button><button class="btn" onclick="rentalAct(\'' + escAttr(r.id) + '\',\'rejected\')">Reject</button></div>' : "") + "</div>";
-    }).join("")) + "</div>" +
+    '<div class="card" style="margin-top:16px;font-size:13px;color:var(--muted)">Residents declare this themselves under their portal\'s <b>Unit Status</b> page. Short-term rentals (e.g. Airbnb) and home-based businesses need your review here before they are marked Approved — owner-occupied units and long-term tenant leases do not need approval.</div>' +
+    (waiting.length === 0 ? '<div class="card" style="margin-top:16px;color:var(--muted)">Nothing is waiting for your review right now.' + (flagged.length ? '' : ' No unit has declared a short-term rental or business yet.') + '</div>' : '<div class="rental-grid">' + rentalCards(waiting) + "</div>") +
+    (decided.length ? '<details class="card" style="margin-top:16px"><summary style="cursor:pointer;font-weight:700">Already decided: ' + approved + " approved, " + rejected + ' rejected</summary><div class="rental-grid" style="margin-top:14px">' + rentalCards(decided) + "</div></details>" : "") +
     '<div class="card" style="padding:0;overflow:hidden;margin-top:16px"><div style="display:flex;align-items:center;padding:14px 18px"><h2 style="font-size:19px;flex-grow:1">All units by usage</h2><button class="btn" onclick="exportUnits()">Export .csv</button></div>' +
     tableRows(units.map(function (r) {
       return '<tr><td style="font-weight:700">' + esc(r.id) + "</td><td>" + esc(r.v.name || "—") + "</td><td>" + usageCellHtml(r.v) + '</td><td style="color:var(--muted)">' + esc(r.v.statusNote || "") + '</td><td><button class="btn" style="min-height:32px;padding:0 10px;font-size:12px" onclick="setUsageForm(\'' + escAttr(r.id) + '\')">Change</button></td></tr>';
@@ -813,7 +844,7 @@ function viewProfile() {
    Search and notifications
    ========================================================================== */
 function searchIndex() {
-  var pages = [["Finance", "fin"], ["Reports", "reports"], ["Parking", "parking"], ["Polls", "polls"], ["Facility booking", "fac"], ["Announcements", "ann"], ["Grievances", "req"], ["Unit rentals", "rentals"], ["Expenses", "expenses"], ["Activity log", "log"], ["Manage access", "manage"], ["Settings", "settings"], ["My profile", "profile"]];
+  var pages = [["Finance", "fin"], ["Reports", "reports"], ["Parking", "parking"], ["Polls", "polls"], ["Facility booking", "fac"], ["Announcements", "ann"], ["Grievances", "req"], ["Unit status", "rentals"], ["Expenses", "expenses"], ["Activity log", "log"], ["Manage access", "manage"], ["Settings", "settings"], ["My profile", "profile"]];
   return [].concat(
     sortedUnits().map(function (r) { return { t: esc(r.id + " · " + (r.v.name || "—")), s: esc((r.v.type || "") + " · " + (r.v.contact || "")), tag: "Unit", v: "units" }; }),
     list("announcement").map(function (r) { return { t: esc(r.v.title), s: esc(r.v.body || ""), tag: "Announcement", v: "ann" }; }),
@@ -831,7 +862,7 @@ function bellItems() {
   if (c.proofs) l.push({ t: c.proofs + " payment" + (c.proofs > 1 ? "s" : "") + " to verify", s: "Finance", v: "fin" });
   if (c.unpaid) l.push({ t: c.unpaid + " unpaid charge" + (c.unpaid > 1 ? "s" : ""), s: "Finance", v: "fin" });
   if (c.grievances) l.push({ t: c.grievances + " open grievance" + (c.grievances > 1 ? "s" : ""), s: "Grievances", v: "req" });
-  if (c.rentals) l.push({ t: c.rentals + " unit rental to review", s: "Rentals", v: "rentals" });
+  if (c.rentals) l.push({ t: c.rentals + " unit status to review", s: "Unit status", v: "rentals" });
   if (c.parking) l.push({ t: c.parking + " parking request" + (c.parking > 1 ? "s" : ""), s: "Parking", v: "parking" });
   return l;
 }
