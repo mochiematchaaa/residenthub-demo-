@@ -670,7 +670,7 @@ function renderLogin(msg) {
     '<button class="btn primary" type="submit">Continue</button>' + authErr("loginErr", msg) +
     '<div class="' + AUTH.divider + '"></div><div class="' + AUTH.links + '"><button type="button" class="linklike" id="forgotLink">Forgot password?</button></div>' +
     '<p style="font-size:12px;color:var(--muted);text-align:center;line-height:1.55;margin:6px 0 0">Access is by invitation only. There is no public sign-up — the administration office creates every account.' +
-    (admin ? ' Residents use the <a href="resident.html" style="color:var(--navy-dark);font-weight:700">Resident Login</a>.' : "") + "</p>",
+    (admin ? ' Residents use the <a href="resident.html" style="color:var(--navy-dark);font-weight:700">Resident Login</a>.' : ' Administrators use the <a href="admin.html" style="color:var(--navy-dark);font-weight:700">Administrator Login</a>.') + "</p>",
     admin ? ["Centralized dashboard", "Role-based access"] : ["Secure resident sign-in", "Bookings &amp; dues in one place"]);
   bindPwToggles($("#authForm"));
   $("#forgotLink").addEventListener("click", function () { renderForgot(); });
@@ -692,7 +692,7 @@ function renderLogin(msg) {
       err.textContent = failMsg; err.hidden = false; btn.disabled = false;
       return;
     }
-    await startSession(session);
+    await startSession(session, true);
   });
 }
 
@@ -880,7 +880,7 @@ async function signOut(everywhere) {
   renderLogin();
 }
 // Runs after a successful sign-in: loads the profile, then boot().
-async function startSession(session) {
+async function startSession(session, fromLogin) {
   DB.user = session.user;
   var p = await sb.from("profiles").select("*").eq("id", DB.user.id).maybeSingle();
   if (p.error || !p.data) {
@@ -892,7 +892,13 @@ async function startSession(session) {
     return renderLogin("This account is suspended. Please contact the administrator.");
   }
   DB.profile = p.data;
-  // each page is for one kind of account; send the other kind to its own page
+  // each page is for one kind of account. At sign-in the other kind is turned away (no mixing of the two portals).
+  if (fromLogin && DB.profile.role !== ROLE) {
+    await sb.auth.signOut();
+    return renderLogin(ROLE === "admin"
+      ? "This is the Administrator sign-in. Residents sign in at the Resident Login."
+      : "This is the Resident sign-in. Administrators sign in at the Administrator Login.");
+  }
   if (DB.profile.role !== ROLE) {
     location.replace(DB.profile.role === "admin" ? "admin.html" : "resident.html");
     return;
